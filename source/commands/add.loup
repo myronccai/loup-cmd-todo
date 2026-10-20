@@ -1,0 +1,31 @@
+@mode(host.dual)
+
+from cli.args import (Options);
+from model.task import (Store, add_task, parse_priority);
+from model.dates import (parse_due);
+from commands.common import (Outcome, new_outcome, usage_outcome, check_values);
+
+# todo add TEXT... [-p PRIORITY] [-t TAG]... [-d DATE]
+pub func cmd_add(edits store: Store, opts: Options, today: string, uuid: string): Outcome {
+    let title = opts.operands.join(" ").trim();
+    if (title.len() == 0) {
+        return usage_outcome("add: missing task text");
+    }
+    let problem = check_values(opts.priority, opts.tags, opts.due, today);
+    if (problem.len() > 0) {
+        return usage_outcome(problem);
+    }
+    var priority = "";
+    if (opts.priority.len() > 0) {
+        priority = parse_priority(opts.priority);
+    }
+    var due = "";
+    if (opts.due.len() > 0) {
+        due = parse_due(opts.due, today);
+    }
+    let id = add_task(edits: store, title, priority, opts.tags, due, today, uuid);
+    var out = new_outcome();
+    out.lines.push("Added task " + str(id) + ": " + title);
+    out.changed = true;
+    return out;
+}

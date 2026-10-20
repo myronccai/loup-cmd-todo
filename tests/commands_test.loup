@@ -1,0 +1,137 @@
+@mode(host.dual)
+
+from debug.assert import (expect, expectEq);
+from appinfo import (EXIT_OK, EXIT_FAILURE, EXIT_USAGE);
+from cli.args import (Options, parse_args);
+from model.task import (Store, empty_store);
+from commands.common import (Outcome, task_line, sorted, parse_id);
+from commands.add import (cmd_add);
+from commands.list import (cmd_list);
+from commands.done import (cmd_done, cmd_rm);
+from commands.edit import (cmd_edit);
+from commands.due import (cmd_due, due_note);
+
+const TODAY: string = "2026-10-20";
+
+func opts(argv: list[string]): Options {
+    return parse_args(argv).unwrap();
+}
+
+# A store with three open tasks: 1 buy milk (high, home, tomorrow),
+# 2 call bob, 3 pay rent (medium, home+money, two days overdue).
+func sample(): Store {
+    var store = empty_store();
+    cmd_add(edits: store, opts(["add", "buy", "milk", "-p", "high", "-t", "home", "-d", "tomorrow"]), TODAY, "u1");
+    cmd_add(edits: store, opts(["add", "call", "bob"]), TODAY, "u2");
+    cmd_add(edits: store, opts(["add", "pay", "rent", "-p", "m", "-t", "home", "-t", "money", "-d", "2026-10-18"]), TODAY, "u3");
+    return store;
+}
+
+func lines(out: Outcome): string {
+    return out.lines.join("\n");
+}
+
+func test_add(): void {
+    var store = empty_store();
+    let out = cmd_add(edits: store, opts(["add", "  buy", "milk  "]), TODAY, "u");
+    expectEq(lines(out), "Added task 1: buy milk", "message");
+    expect(out.changed, "changed");
+    expectEq(store.tasks[0].title, "buy milk", "title trimmed");
+}
+
+func test_add_errors(): void {
+    var store = empty_store();
+    expectEq(cmd_add(edits: store, opts(["add"]), TODAY, "u").status, EXIT_USAGE, "no text");
+    let bad = cmd_add(edits: store, opts(["add", "x", "-p", "urgent"]), TODAY, "u");
+    expectEq(bad.errors[0], "invalid priority 'urgent' (use high, medium, low or none)", "priority");
+    expectEq(cmd_add(edits: store, opts(["add", "x", "-d", "someday"]), TODAY, "u").status, EXIT_USAGE, "date");
+    expectEq(cmd_add(edits: store, opts(["add", "x", "-t", "a b"]), TODAY, "u").status, EXIT_USAGE, "tag");
+    expectEq(store.tasks.len(), 0, "nothing added");
+}
+
+func test_list_order_and_format(): void {
+    let out = cmd_list(sample(), opts(["list"]), TODAY);
+    let want = [
+        " 3 [ ] medium 2026-10-18  pay rent #home #money",
+        " 1 [ ] high   2026-10-21  buy milk #home",
+        " 2 [ ] -      -           call bob",
+    ];
+    expectEq(lines(out), want.join("\n"), "sorted by due date, none last");
+    expect(!out.changed, "list does not change the store");
+}
+
+func test_list_filters(): void {
+    let store = sample();
+    expectEq(cmd_list(store, opts(["list", "-t", "money"]), TODAY).lines.len(), 1, "tag");
+    expectEq(cmd_list(store, opts(["list", "-t", "home", "-p", "high"]), TODAY).lines.len(), 1, "tag and priority");
+    expectEq(cmd_list(store, opts(["list", "-s", "BOB"]), TODAY).lines.len(), 1, "search ignores case");
+    expectEq(cmd_list(store, opts(["list", "--overdue"]), TODAY).lines[0].startsWith(" 3"), true, "overdue");
+    expectEq(lines(cmd_list(store, opts(["list", "-t", "none"]), TODAY)), "No matching tasks.", "no match");
+    expectEq(lines(cmd_list(empty_store(), opts(["list"]), TODAY)), "No tasks.", "empty");
+}
+
+func test_done_and_undo(): void {
+    var store = sample();
+    let done = cmd_done(edits: store, opts(["done", "1", "9"]), TODAY, true);
+    expectEq(lines(done), "Completed task 1: buy milk", "completed");
+    expectEq(done.errors[0], "no task with ID 9", "missing id");
+    expectEq(done.status, EXIT_FAILURE, "status 1");
+    expect(store.tasks[0].done and store.tasks[0].completed == TODAY, "stored");
+    expectEq(lines(cmd_done(edits: store, opts(["done", "1"]), TODAY, true)), "Task 1 is already done.", "again");
+    expectEq(cmd_list(store, opts(["list"]), TODAY).lines.len(), 2, "done tasks hidden");
+    expectEq(cmd_list(store, opts(["list", "--done"]), TODAY).lines.len(), 1, "--done");
+    expectEq(cmd_list(store, opts(["list", "-a"]), TODAY).lines[2], " 1 [x] high   2026-10-21  buy milk #home", "done last");
+    let undo = cmd_done(edits: store, opts(["undo", "1"]), TODAY, false);
+    expectEq(lines(undo), "Reopened task 1: buy milk", "reopened");
+    expect(!store.tasks[0].done and store.tasks[0].completed == "", "reopened in store");
+}
+
+func test_ids_are_checked_first(): void {
+    var store = sample();
+    let out = cmd_done(edits: store, opts(["done", "1", "x"]), TODAY, true);
+    expectEq(out.status, EXIT_USAGE, "usage error");
+    expectEq(out.errors[0], "invalid task ID 'x'", "message");
+    expect(!store.tasks[0].done, "nothing changed");
+    expectEq(cmd_rm(edits: store, opts(["rm"])).errors[0], "rm: missing task ID", "missing");
+}
+
+func test_rm(): void {
+    var store = sample();
+    let out = cmd_rm(edits: store, opts(["rm", "2", "3"]));
+    expectEq(lines(out), "Removed task 2: call bob\nRemoved task 3: pay rent", "removed");
+    expectEq(store.tasks.len(), 1, "one left");
+}
+
+func test_edit(): void {
+    var store = sample();
+    let out = cmd_edit(edits: store, opts(["edit", "3", "pay", "the", "rent", "-p", "none", "--untag", "money", "-t", "bills", "-d", "+5"]), TODAY);
+    expectEq(lines(out), "Updated task 3: pay the rent", "message");
+    let t = store.tasks[2];
+    expectEq(t.priority, "", "priority cleared");
+    expectEq(t.tags.join(","), "home,bills", "tags");
+    expectEq(t.due, "2026-10-25", "due");
+    let only_due = cmd_edit(edits: store, opts(["edit", "1", "-d", "none"]), TODAY);
+    expectEq(store.tasks[0].due, "", "due cleared");
+    expectEq(store.tasks[0].title, "buy milk", "title kept");
+    expectEq(cmd_edit(edits: store, opts(["edit", "1"]), TODAY).errors[0], "edit: nothing to change (give new text or an option)", "nothing");
+    expectEq(cmd_edit(edits: store, opts(["edit", "8", "x"]), TODAY).status, EXIT_FAILURE, "unknown id");
+}
+
+func test_due(): void {
+    let store = sample();
+    let out = cmd_due(store, opts(["due"]), TODAY);
+    expectEq(lines(out), " 3 [ ] medium 2026-10-18  pay rent #home #money  (2 days overdue)\n 1 [ ] high   2026-10-21  buy milk #home  (due tomorrow)", "due list");
+    expectEq(lines(cmd_due(store, opts(["due", "0"]), TODAY)), " 3 [ ] medium 2026-10-18  pay rent #home #money  (2 days overdue)", "today only");
+    expectEq(lines(cmd_due(empty_store(), opts(["due", "3"]), TODAY)), "Nothing due in the next 3 days.", "nothing");
+    expectEq(cmd_due(store, opts(["due", "x"]), TODAY).status, EXIT_USAGE, "bad days");
+    expectEq(due_note("2026-10-19", TODAY), "(1 day overdue)", "one day");
+    expectEq(due_note("2026-10-20", TODAY), "(due today)", "today");
+    expectEq(due_note("2026-10-30", TODAY), "(due in 10 days)", "later");
+}
+
+func test_parse_id(): void {
+    expectEq(parse_id("12"), 12, "number");
+    expectEq(parse_id("0"), -1, "zero");
+    expectEq(parse_id("-1"), -1, "negative");
+    expectEq(parse_id("1x"), -1, "junk");
+}

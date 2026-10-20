@@ -1,0 +1,68 @@
+@mode(host.dual)
+
+from debug.assert import (expect, expectEq);
+from storage.json import (Json, parse_json, write_json, quote, field);
+import system.json as sysjson;
+
+func test_scalars(): void {
+    expectEq(write_json(parse_json("true").unwrap(), ""), "true", "true");
+    expectEq(write_json(parse_json(" null ").unwrap(), ""), "null", "null");
+    expectEq(write_json(parse_json("-42").unwrap(), ""), "-42", "negative int");
+    expectEq(write_json(parse_json("\"a\\\"b\"").unwrap(), ""), "\"a\\\"b\"", "escaped quote");
+}
+
+func test_escapes(): void {
+    let text = parse_json("\"tab\\there\\nline \\u00e9 \\ud83d\\ude00 \\/\"").unwrap();
+    match text {
+        Json.Str(s) => {
+            expectEq(s, "tab\there\nline é 😀 /", "decoded");
+        },
+        _ => {
+            expect(false, "a string");
+        },
+    }
+    expectEq(quote("a\"b\\c\nd"), "\"a\\\"b\\\\c\\nd\"", "quote");
+}
+
+func test_nested_round_trip(): void {
+    let text = "{\n  \"a\": [1, 2],\n  \"b\": {\n    \"c\": null,\n    \"d\": []\n  },\n  \"e\": [\n    {}\n  ]\n}";
+    expectEq(write_json(parse_json(text).unwrap(), ""), text, "round trip");
+}
+
+func test_field(): void {
+    let doc = parse_json("{\"x\": 1, \"y\": \"z\"}").unwrap();
+    expect(field(doc, "x").found, "x found");
+    expect(!field(doc, "w").found, "w missing");
+    expect(!field(Json.Null, "x").found, "not an object");
+}
+
+func test_errors(): void {
+    expect(parse_json("").is_err(), "empty");
+    expect(parse_json("[1, 2").is_err(), "unclosed array");
+    expect(parse_json("{\"a\" 1}").is_err(), "missing colon");
+    expect(parse_json("1.5").is_err(), "fractions are not supported");
+    expect(parse_json("[1] x").is_err(), "trailing text");
+    expect(parse_json("\"abc").is_err(), "unterminated string");
+    expectEq(parse_json("[1,, 2]").unwrap_err(), "unexpected character at character 4", "position");
+}
+
+# Our writer's output is JSON that system.json reads, and the other way
+# round (system.json works under `loup run` and Stage0, not natively).
+func test_compatible_with_system_json(): void {
+    let ours = write_json(parse_json("{\"title\": \"caf\\u00e9 \\\"x\\\"\", \"tags\": [\"a\"], \"n\": 3}").unwrap(), "");
+    let theirs = sysjson.parse(ours).unwrap() as dict[string, Any];
+    expectEq(theirs["title"] as string, "café \"x\"", "title");
+    expectEq(theirs["n"] as int, 3, "n");
+    var obj: dict[string, Any] = {};
+    obj["s"] = "line\nbreak";
+    obj["ok"] = true;
+    let back = parse_json(sysjson.stringify(obj)).unwrap();
+    match field(back, "s").value {
+        Json.Str(s) => {
+            expectEq(s, "line\nbreak", "string from system.json");
+        },
+        _ => {
+            expect(false, "a string");
+        },
+    }
+}

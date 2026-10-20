@@ -1,0 +1,45 @@
+@mode(host.dual)
+
+from debug.assert import (expect, expectEq);
+from model.dates import (valid_iso, parse_due, relative_day, days_between, add_days, days_in_month);
+
+# 2026-10-20 is a Tuesday.
+const TODAY: string = "2026-10-20";
+
+func test_valid_iso(): void {
+    expect(valid_iso("2026-10-20"), "ordinary");
+    expect(valid_iso("2028-02-29"), "leap day");
+    expect(!valid_iso("2026-02-29"), "not a leap year");
+    expect(!valid_iso("2026-13-01"), "month 13");
+    expect(!valid_iso("2026-1-01"), "short month");
+    expect(!valid_iso("tomorrow"), "word");
+    expectEq(days_in_month(2000, 2), 29, "2000 is a leap year");
+    expectEq(days_in_month(1900, 2), 28, "1900 is not");
+}
+
+func test_parse_due(): void {
+    expectEq(parse_due("2026-12-24", TODAY), "2026-12-24", "ISO");
+    expectEq(parse_due("today", TODAY), "2026-10-20", "today");
+    expectEq(parse_due("Tomorrow", TODAY), "2026-10-21", "tomorrow, any case");
+    expectEq(parse_due("+3", TODAY), "2026-10-23", "+N");
+    expectEq(parse_due("+12d", TODAY), "2026-11-01", "+Nd");
+    expectEq(parse_due("+2w", TODAY), "2026-11-03", "+Nw");
+    expectEq(parse_due("fri", TODAY), "2026-10-23", "next Friday");
+    expectEq(parse_due("tuesday", TODAY), "2026-10-27", "the next Tuesday, not today");
+    expectEq(parse_due("mon", TODAY), "2026-10-26", "next Monday");
+    expectEq(parse_due("none", TODAY), "", "none clears");
+    expectEq(parse_due("2026-02-30", TODAY), "?", "bad date");
+    expectEq(parse_due("+x", TODAY), "?", "bad offset");
+    expectEq(parse_due("fr", TODAY), "?", "too short for a weekday");
+}
+
+func test_days(): void {
+    expectEq(days_between(TODAY, "2026-10-23"), 3, "forward");
+    expectEq(days_between(TODAY, "2026-10-18"), -2, "backward");
+    expectEq(add_days("2026-12-31", 1), "2027-01-01", "new year");
+    expectEq(relative_day("2026-10-20", TODAY), "today", "today");
+    expectEq(relative_day("2026-10-21", TODAY), "tomorrow", "tomorrow");
+    expectEq(relative_day("2026-10-19", TODAY), "yesterday", "yesterday");
+    expectEq(relative_day("2026-10-25", TODAY), "in 5 days", "future");
+    expectEq(relative_day("2026-10-10", TODAY), "10 days ago", "past");
+}

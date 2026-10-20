@@ -1,0 +1,224 @@
+@mode(host.dual)
+
+# What every command shares: the Outcome it returns, ID parsing, the
+# filters, the sort order and the one-line rendering of a task.
+
+from appinfo import (EXIT_OK, EXIT_FAILURE, EXIT_USAGE);
+from model.task import (Task, priority_rank, parse_priority, valid_tag);
+from model.dates import (parse_due, days_between);
+
+# The result of a command: lines for standard output, messages for standard
+# error, the exit status, and whether the store must be saved.
+pub struct Outcome {
+    pub var lines: list[string];
+    pub var errors: list[string];
+    pub var status: int;
+    pub var changed: bool;
+}
+
+pub func new_outcome(): Outcome {
+    let none: list[string] = [];
+    return Outcome(lines = none, errors = none, status = EXIT_OK, changed = false);
+}
+
+pub func usage_outcome(message: string): Outcome {
+    var out = new_outcome();
+    out.errors.push(message);
+    out.status = EXIT_USAGE;
+    return out;
+}
+
+pub func fail(edits out: Outcome, message: string): void {
+    out.errors.push(message);
+    if (out.status == EXIT_OK) {
+        out.status = EXIT_FAILURE;
+    }
+}
+
+const DIGITS: string = "0123456789";
+
+# A positive whole number, or -1.
+pub func parse_id(text: string): int {
+    if (text.len() == 0 or text.len() > 9) {
+        return -1;
+    }
+    var value = 0;
+    for (ch in text) {
+        let d = DIGITS.index_of(ch);
+        if (d < 0) {
+            return -1;
+        }
+        value = value * 10 + d;
+    }
+    if (value < 1) {
+        return -1;
+    }
+    return value;
+}
+
+pub const PRIORITY_HELP: string = " (use high, medium, low or none)";
+pub const TAG_HELP: string = " (use letters, digits, '-', '_' and '.')";
+pub const DATE_HELP: string = " (use YYYY-MM-DD, today, tomorrow, +N, +Nw, a weekday or none)";
+
+# Checks the --priority, --tag/--untag and --due values; returns the first
+# problem or "".
+pub func check_values(priority: string, tags: list[string], due: string, today: string): string {
+    if (priority.len() > 0 and parse_priority(priority) == "?") {
+        return "invalid priority '" + priority + "'" + PRIORITY_HELP;
+    }
+    for (tag in tags) {
+        if (!valid_tag(tag)) {
+            return "invalid tag '" + tag + "'" + TAG_HELP;
+        }
+    }
+    if (due.len() > 0 and parse_due(due, today) == "?") {
+        return "invalid date '" + due + "'" + DATE_HELP;
+    }
+    return "";
+}
+
+# A sortable number for a due date: YYYYMMDD, or a large number for none.
+func due_key(due: string): int {
+    if (due.len() != 10) {
+        return 99999999;
+    }
+    var value = 0;
+    for (ch in due) {
+        let d = DIGITS.index_of(ch);
+        if (d >= 0) {
+            value = value * 10 + d;
+        }
+    }
+    return value;
+}
+
+# Sort order: open tasks first, then by due date (none last), priority
+# (high first) and ID.
+pub func before(a: Task, b: Task): bool {
+    if (a.done != b.done) {
+        return !a.done;
+    }
+    let da = due_key(a.due);
+    let db = due_key(b.due);
+    if (da != db) {
+        return da < db;
+    }
+    let pa = priority_rank(a.priority);
+    let pb = priority_rank(b.priority);
+    if (pa != pb) {
+        return pa > pb;
+    }
+    return a.id < b.id;
+}
+
+# A stable insertion sort with `before`.
+pub func sorted(tasks: list[Task]): list[Task] {
+    var out: list[Task] = [];
+    for (t in tasks) {
+        var at = out.len();
+        while (at > 0 and before(t, out[at - 1])) {
+            at -= 1;
+        }
+        var next: list[Task] = [];
+        var i = 0;
+        while (i < out.len()) {
+            if (i == at) {
+                next.push(t);
+            }
+            next.push(out[i]);
+            i += 1;
+        }
+        if (at == out.len()) {
+            next.push(t);
+        }
+        out = next;
+    }
+    return out;
+}
+
+func pad_right(text: string, width: int): string {
+    if (text.len() >= width) {
+        return text;
+    }
+    return text + " ".repeat(width - text.len());
+}
+
+func pad_left(text: string, width: int): string {
+    if (text.len() >= width) {
+        return text;
+    }
+    return " ".repeat(width - text.len()) + text;
+}
+
+# The width of the widest ID in `tasks` (at least 2).
+pub func id_width(tasks: list[Task]): int {
+    var width = 2;
+    for (t in tasks) {
+        let w = str(t.id).len();
+        if (w > width) {
+            width = w;
+        }
+    }
+    return width;
+}
+
+# One task on one line:
+#    3 [ ] high   2026-10-21  buy milk #home
+pub func task_line(t: Task, width: int): string {
+    var mark = "[ ]";
+    if (t.done) {
+        mark = "[x]";
+    }
+    var priority = t.priority;
+    if (priority.len() == 0) {
+        priority = "-";
+    }
+    var due = t.due;
+    if (due.len() == 0) {
+        due = "-";
+    }
+    var parts: list[string] = [pad_left(str(t.id), width), " ", mark, " ", pad_right(priority, 6), " ", pad_right(due, 10), "  ", t.title];
+    for (tag in t.tags) {
+        parts.push(" #" + tag);
+    }
+    return parts.join("");
+}
+
+# The second line of the long format.
+pub func detail_line(t: Task, width: int): string {
+    var text = " ".repeat(width + 5) + "created " + t.created;
+    if (t.completed.len() > 0) {
+        text = text + ", completed " + t.completed;
+    }
+    return text + ", uuid " + t.uuid;
+}
+
+# The tasks among `tasks` that match the filters common to list and due:
+# every --tag, the --priority (if any) and the --search text.
+pub func filter_tasks(tasks: list[Task], tags: list[string], priority: string, search: string): list[Task] {
+    let wanted_priority = parse_priority(priority);
+    let needle = search.toLowerCase();
+    var out: list[Task] = [];
+    for (t in tasks) {
+        var keep = true;
+        for (tag in tags) {
+            if (!t.tags.contains(tag)) {
+                keep = false;
+            }
+        }
+        if (priority.len() > 0 and t.priority != wanted_priority) {
+            keep = false;
+        }
+        if (needle.len() > 0 and t.title.toLowerCase().index_of(needle) < 0) {
+            keep = false;
+        }
+        if (keep) {
+            out.push(t);
+        }
+    }
+    return out;
+}
+
+pub func is_overdue(t: Task, today: string): bool {
+    return !t.done and t.due.len() > 0 and days_between(today, t.due) < 0;
+}

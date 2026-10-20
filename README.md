@@ -1,12 +1,15 @@
-# template Loup commandline application
+# loup-cmd-todo
 
-A GitHub template for a command-line application written in
-[Loup](https://code-craft.ai/references/loup). It includes argument parsing,
-command dispatch, a sample `hello` command, tests, a native build and a CI
-workflow.
+A command-line task manager in [Loup](https://code-craft.ai/references/loup):
+`add`, `list`, `done`, `undo`, `rm`, `edit` and `due`, with priorities,
+tags, filters and due dates, kept in a JSON file that is saved atomically.
 
-After creating a repository from this template, work through
-[REPOSITORY_TODOS.md](REPOSITORY_TODOS.md).
+Part of the **loup-cmd** series of example applications: classic Linux and
+Windows commands, and projects for each Loup execution mode, each in its own
+repository under [myronccai](https://github.com/myronccai?tab=repositories&q=loup-cmd).
+This one is a `host.dual` project: you develop it interpreted with
+`make run` and ship the native binary `build/todo` built from the same
+sources.
 
 ## Requirements
 
@@ -14,70 +17,164 @@ After creating a repository from this template, work through
 
   ```sh
   curl -fsSL https://github.com/code-craft-ai-company/loup-releases/releases/latest/download/loup-install.sh | sh
-  loup --version
   ```
 
-- `make`
-- `clang` 17 or later for native builds. Native builds are supported on Linux
-  x86-64 and arm64, and are a preview on macOS and Windows.
+- `make`, and `clang` 17 or later for the native build.
 
 ## Usage
 
 ```sh
-make run ARGS="--help"            # run from source
-make run ARGS="hello Ann --shout"
-make check                        # type-check the program
-make test                         # run the tests in tests/
-make build                        # native binary: build/myapp
-make ci                           # check, test, build and smoke-test the binary
-make clean
+make build                          # native binary: build/todo
+make ci                             # check, unit tests, build, e2e (binary and loup run)
+make run ARGS="add buy milk -p h"   # run from source with loup run
 ```
 
 ```text
-$ build/myapp --help
-usage: myapp [OPTIONS] COMMAND [ARGS...]
-
-A command-line application written in Loup.
-
-Commands:
-  hello [NAME]          Print a greeting (NAME defaults to 'world')
-  help                  Show this help
-
-Options:
-  -g, --greeting TEXT   Greeting used by 'hello' (default: Hello)
-      --shout           Print the greeting in upper case
-  -v, --verbose         Print diagnostic messages to stderr
-  -h, --help            Show this help and exit
-  -V, --version         Show the version and exit
+$ build/todo add buy milk -p high -t home -d tomorrow
+Added task 1: buy milk
+$ build/todo add pay rent -p medium -t home -t bills -d 2026-10-18
+Added task 2: pay rent
+$ build/todo add call the dentist -d fri
+Added task 3: call the dentist
+$ build/todo add read Dune -t books
+Added task 4: read Dune
+$ build/todo list
+ 2 [ ] medium 2026-10-18  pay rent #home #bills
+ 1 [ ] high   2026-10-21  buy milk #home
+ 3 [ ] -      2026-10-23  call the dentist
+ 4 [ ] -      -           read Dune #books
+$ build/todo done 1
+Completed task 1: buy milk
+$ build/todo due
+ 2 [ ] medium 2026-10-18  pay rent #home #bills  (2 days overdue)
+ 3 [ ] -      2026-10-23  call the dentist  (due in 3 days)
+$ build/todo list -a -t home
+ 2 [ ] medium 2026-10-18  pay rent #home #bills
+ 1 [x] high   2026-10-21  buy milk #home
+$ build/todo edit 4 read Dune Messiah -p low --untag books -t scifi
+Updated task 4: read Dune Messiah
+$ build/todo list -l -s dune
+ 4 [ ] low    -           read Dune Messiah #scifi
+       created 2026-10-20, uuid 76ed6d00-1c98-40f7-866f-d55b303cab33
+$ build/todo rm 7; echo "exit $?"
+todo: no task with ID 7
+exit 1
+$ build/todo add; echo "exit $?"
+todo: add: missing task text
+Try 'todo --help' for more information.
+exit 2
 ```
 
-Exit status: `0` success, `1` runtime failure, `2` usage error.
+Commands:
+
+| Command | Does | Options |
+|---|---|---|
+| `add TEXT...` | adds an open task | `-p PRIORITY`, `-t TAG`..., `-d DATE` |
+| `list` (`ls`) | lists open tasks | `-a` (all), `--done`, `-t TAG`..., `-p PRIORITY`, `-s TEXT`, `--overdue`, `-l` |
+| `done ID...` | marks tasks done | |
+| `undo ID...` | reopens tasks | |
+| `rm ID...` | removes tasks | |
+| `edit ID [TEXT...]` | changes a task | `-p PRIORITY`, `-t TAG`..., `--untag TAG`..., `-d DATE` |
+| `due [DAYS]` | open tasks due within DAYS days (default 7), overdue ones included | `-t TAG`..., `-p PRIORITY`, `-l` |
+| `help` | prints the usage | |
+
+- Priorities: `high`, `medium`, `low` (`h`, `m`, `l`), or `none` to clear.
+- Due dates: `YYYY-MM-DD`, `today`, `tomorrow`, `+N` days, `+Nw` weeks, a
+  weekday (`fri`, `monday`: the next one after today), or `none` to clear.
+- Tags: letters, digits, `-`, `_` and `.`; `-t` with `list` and `due` keeps
+  tasks that have every tag given.
+- Order: open tasks first, then by due date (none last), priority, ID.
+- Options may come anywhere before `--`, as `-p high`, `--priority high` or
+  `--priority=high`; a command refuses options that are not its own.
+  `-h`/`--help` and `-V`/`--version` work everywhere.
+
+The file is `--file FILE`, else `$TODO_FILE`, else `./todo.json`. A missing
+file means no tasks; it is created by the first change. IDs are never
+reused. `$TODO_TODAY=YYYY-MM-DD` replaces today's date (the tests use it).
+
+```text
+$ head -16 todo.json
+{
+  "version": 1,
+  "next_id": 5,
+  "tasks": [
+    {
+      "id": 1,
+      "uuid": "a60b0bc3-1f3a-49d4-9eb8-5dae85a7412f",
+      "title": "buy milk",
+      "done": true,
+      "priority": "high",
+      "tags": ["home"],
+      "due": "2026-10-21",
+      "created": "2026-10-20",
+      "completed": "2026-10-20"
+    },
+    {
+```
+
+Exit status: `0` on success, `1` if a task ID is unknown or the file cannot
+be read or written (`todo: FILE: REASON`), `2` on a usage error.
+
+## What this example shows
+
+**The dual workflow.** The sources are `host.dual`, so the same files run
+in two ways. While you work, `make run` interprets them with `loup run`; to
+ship, `make build` compiles them into `build/todo`, a 470 KB executable
+that needs no Loup installation. They print the same thing:
+
+```text
+$ make run ARGS="list -t home"
+loup run source/main.loup -- list -t home
+ 2 [ ] medium 2026-10-18  pay rent #home #bills
+$ build/todo list -t home
+ 2 [ ] medium 2026-10-18  pay rent #home #bills
+```
+
+and `make ci` holds them to it: `make e2e` runs `tests/e2e.sh` against the
+binary and `make e2e-run` runs the same 65 cases through `loup run`.
+
+**The rest of the template, used for real.** A subcommand dispatcher with
+per-command option checks; commands as pure functions from a `Store` to an
+`Outcome` (lines, errors, exit status, whether to save), so the unit tests
+need no files; a validating loader; and an atomic save (write `FILE.tmp`,
+rename it over `FILE`).
+
+**Where 1.26.0 forced a detour.** These are the places where the program
+does not use the standard library the roadmap planned for:
+
+- `system.json` is not used by the program: its `parse` and `stringify` are
+  host builtins that native builds cannot link. `source/storage/json.loup`
+  is a small JSON reader and writer instead; the unit tests check that it
+  and `system.json` read each other's output.
+- `core.uuid`'s `Uuid.v4()` needs an entropy source that native builds and
+  the self-hosted `loup run` lack, so UUIDs are drawn from `core.random`
+  seeded with the clock, and `core.uuid` only validates them.
+- `core.datetime` does all the date arithmetic (`addDays`, `daysUntil`,
+  `weekday`, `today`).
+- In native builds, a struct constructed both in its own module and in
+  another one is corrupted, so each struct is built in one module only
+  (`model.task.new_task` for tasks).
 
 ## Layout
 
 ```text
-package.lppkg            # Loup manifest
-Makefile                 # run, check, test, build, ci, clean
-source/                  # the application's Loup code
-├── main.loup            # entry point
-├── cli/                 # argument parsing, help text, command dispatch
-└── commands/            # one module per command
-tests/                   # *_test.loup files
-specs/                   # feature specs: requirements, design, tasks
-skills/loup-programmer/  # agent skill for writing Loup
+source/main.loup              # entry point
+source/appinfo.loup           # name, version, exit statuses
+source/cli/args.loup          # options
+source/cli/usage.loup         # --help and --version text
+source/cli/app.loup           # run(): parse, dispatch, option checks
+source/commands/runner.loup   # load, run a command, save, print
+source/commands/common.loup   # Outcome, sorting, filters, task lines
+source/commands/*.loup        # add, list, done/undo/rm, edit, due
+source/model/task.loup        # Task, Store, IDs, priorities, tags
+source/model/dates.loup       # due-date parsing and arithmetic
+source/model/ids.loup         # UUIDs
+source/storage/json.loup      # JSON reader and writer
+source/storage/file.loup      # the todo file: format, load, atomic save
+tests/*_test.loup             # unit tests (make test)
+tests/e2e.sh                  # end-to-end tests (make e2e, make e2e-run)
+specs/todo/                   # requirements, design, tasks
 ```
 
-[AGENTS.md](AGENTS.md) has the full layout, every build and test command, and
-the steps for adding a command.
-
-## Notes on the toolchain
-
-- On Linux x86-64, `loup` is the self-hosted driver and `loup-bootstrap` is
-  Stage0. `check` and `test` use `loup-bootstrap`; on other platforms both
-  names run the same tool. The Makefile handles this.
-- Modules import each other by their path under `source/`
-  (`from cli.args import (Options);`). Tests import them the same way, which
-  is why `make test` puts `source/` on `LOUPPATH`.
-- The Wasm build (`loup-bootstrap build`) is experimental: modules that use
-  `i"..."` interpolation build but trap at run time, so this template builds
-  native binaries.
+[AGENTS.md](AGENTS.md) has every build and test command and the conventions
+for changing the code.

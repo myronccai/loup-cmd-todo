@@ -1,0 +1,283 @@
+@mode(host.dual)
+
+# The todo file: where it is, how a Store maps to JSON, and the atomic save.
+#
+#   {
+#     "version": 1,
+#     "next_id": 4,
+#     "tasks": [
+#       {"id": 1, "uuid": "...", "title": "...", "done": false,
+#        "priority": "high", "tags": ["home"], "due": "2026-10-21",
+#        "created": "2026-10-20", "completed": null}
+#     ]
+#   }
+
+from io.path import (dirname);
+from io.fs import (isDir, isFile);
+from model.task import (Task, Store, empty_store, new_task, parse_priority, valid_tag);
+from model.dates import (valid_iso);
+from model.ids import (valid_uuid);
+from storage.json import (Json, Field, field, parse_json, write_json);
+
+pub const FORMAT_VERSION: int = 1;
+pub const DEFAULT_FILE: string = "todo.json";
+
+# The file to use: --file, else $TODO_FILE, else ./todo.json.
+pub func store_path(option_file: string): string {
+    if (option_file.len() > 0) {
+        return option_file;
+    }
+    let from_env = env("TODO_FILE") ?? "";
+    if (from_env.len() > 0) {
+        return from_env;
+    }
+    return DEFAULT_FILE;
+}
+
+func optional_text(text: string): Json {
+    if (text.len() == 0) {
+        return Json.Null;
+    }
+    return Json.Str(value = text);
+}
+
+pub func task_to_json(t: Task): Json {
+    var tags: list[Json] = [];
+    for (tag in t.tags) {
+        tags.push(Json.Str(value = tag));
+    }
+    let keys = ["id", "uuid", "title", "done", "priority", "tags", "due", "created", "completed"];
+    let values = [
+        Json.Int(value = t.id),
+        Json.Str(value = t.uuid),
+        Json.Str(value = t.title),
+        Json.Bool(value = t.done),
+        optional_text(t.priority),
+        Json.Arr(items = tags),
+        optional_text(t.due),
+        Json.Str(value = t.created),
+        optional_text(t.completed),
+    ];
+    return Json.Obj(keys = keys, values = values);
+}
+
+pub func store_to_json(store: Store): Json {
+    var tasks: list[Json] = [];
+    for (t in store.tasks) {
+        tasks.push(task_to_json(t));
+    }
+    let keys = ["version", "next_id", "tasks"];
+    let values = [Json.Int(value = FORMAT_VERSION), Json.Int(value = store.next_id), Json.Arr(items = tasks)];
+    return Json.Obj(keys = keys, values = values);
+}
+
+pub func store_to_text(store: Store): string {
+    return write_json(store_to_json(store), "") + "\n";
+}
+
+# Field readers. Each returns the value, or records a problem in `errors`.
+func get_int(obj: Json, key: string, edits errors: list[string]): int {
+    let f = field(obj, key);
+    match f.value {
+        Json.Int(n) => {
+            return n;
+        },
+        _ => {
+            errors.push("'" + key + "' must be a whole number");
+            return 0;
+        },
+    }
+}
+
+# A string field; null or a missing field reads as "".
+func get_text(obj: Json, key: string, edits errors: list[string]): string {
+    let f = field(obj, key);
+    match f.value {
+        Json.Str(text) => {
+            return text;
+        },
+        Json.Null => {
+            return "";
+        },
+        _ => {
+            errors.push("'" + key + "' must be a string");
+            return "";
+        },
+    }
+}
+
+func get_bool(obj: Json, key: string, edits errors: list[string]): bool {
+    let f = field(obj, key);
+    match f.value {
+        Json.Bool(b) => {
+            return b;
+        },
+        Json.Null => {
+            return false;
+        },
+        _ => {
+            errors.push("'" + key + "' must be true or false");
+            return false;
+        },
+    }
+}
+
+func get_tags(obj: Json, edits errors: list[string]): list[string] {
+    var tags: list[string] = [];
+    let f = field(obj, "tags");
+    match f.value {
+        Json.Arr(items) => {
+            for (item in items) {
+                match item {
+                    Json.Str(tag) => {
+                        tags.push(tag);
+                    },
+                    _ => {
+                        errors.push("'tags' must hold strings");
+                    },
+                }
+            }
+        },
+        Json.Null => {},
+        _ => {
+            errors.push("'tags' must be a list");
+        },
+    }
+    return tags;
+}
+
+func task_from_json(obj: Json, n: int, edits errors: list[string]): Task {
+    var problems: list[string] = [];
+    if (!field(obj, "id").found or !field(obj, "title").found) {
+        problems.push("'id' and 'title' are required");
+    }
+    let id = get_int(obj, "id", edits: problems);
+    let uuid = get_text(obj, "uuid", edits: problems);
+    let title = get_text(obj, "title", edits: problems);
+    let done = get_bool(obj, "done", edits: problems);
+    let priority = get_text(obj, "priority", edits: problems);
+    let tags = get_tags(obj, edits: problems);
+    let due = get_text(obj, "due", edits: problems);
+    let created = get_text(obj, "created", edits: problems);
+    let completed = get_text(obj, "completed", edits: problems);
+    let t = new_task(id, uuid, title, done, priority, tags, due, created, completed);
+    if (t.id < 1) {
+        problems.push("'id' must be positive");
+    }
+    if (t.uuid.len() > 0 and !valid_uuid(t.uuid)) {
+        problems.push("'uuid' is not a valid UUID");
+    }
+    if (t.priority.len() > 0 and parse_priority(t.priority) != t.priority) {
+        problems.push("'priority' must be high, medium, low or null");
+    }
+    for (tag in t.tags) {
+        if (!valid_tag(tag)) {
+            problems.push("bad tag '" + tag + "'");
+        }
+    }
+    if (t.due.len() > 0 and !valid_iso(t.due)) {
+        problems.push("'due' must be a YYYY-MM-DD date");
+    }
+    for (p in problems) {
+        errors.push("task " + str(n) + ": " + p);
+    }
+    return t;
+}
+
+# A Store from parsed JSON, or the reason it is not a todo file.
+pub func store_from_json(doc: Json): Result[Store, string] {
+    var store = empty_store();
+    if (!field(doc, "tasks").found) {
+        return Err("not a todo file (no 'tasks' list)");
+    }
+    var errors: list[string] = [];
+    var max_id = 0;
+    var seen: list[int] = [];
+    match field(doc, "tasks").value {
+        Json.Arr(items) => {
+            var n = 0;
+            for (item in items) {
+                n += 1;
+                let t = task_from_json(item, n, edits: errors);
+                if (seen.contains(t.id)) {
+                    errors.push("task " + str(n) + ": duplicate id " + str(t.id));
+                }
+                seen.push(t.id);
+                if (t.id > max_id) {
+                    max_id = t.id;
+                }
+                store.tasks.push(t);
+            }
+        },
+        _ => {
+            errors.push("'tasks' must be a list");
+        },
+    }
+    if (errors.len() > 0) {
+        return Err(errors[0]);
+    }
+    var next_id = max_id + 1;
+    let stored = field(doc, "next_id");
+    if (stored.found) {
+        var ignored: list[string] = [];
+        let n = get_int(doc, "next_id", edits: ignored);
+        if (n > next_id) {
+            next_id = n;
+        }
+    }
+    store.next_id = next_id;
+    return Ok(store);
+}
+
+pub func store_from_text(text: string): Result[Store, string] {
+    let parsed = parse_json(text);
+    if (parsed.is_err()) {
+        return Err("invalid JSON: " + parsed.unwrap_err());
+    }
+    return store_from_json(parsed.unwrap());
+}
+
+# The store in `path`; a missing file is an empty store.
+pub func load_store(path: string): Result[Store, string] {
+    if (!exists(path)) {
+        return Ok(empty_store());
+    }
+    if (!isFile(path)) {
+        return Err(path + ": not a regular file");
+    }
+    let loaded = store_from_text(readText(path));
+    if (loaded.is_err()) {
+        return Err(path + ": " + loaded.unwrap_err());
+    }
+    return loaded;
+}
+
+func directory_of(path: string): string {
+    let dir = dirname(path);
+    if (dir.len() == 0) {
+        return ".";
+    }
+    return dir;
+}
+
+# Writes the store atomically: the new text goes to PATH.tmp in the same
+# directory, which is then renamed over PATH, so a reader sees either the
+# old file or the new one, never half of one.
+pub func save_store(path: string, store: Store): Result[bool, string] {
+    let dir = directory_of(path);
+    if (!isDir(dir)) {
+        return Err(path + ": directory '" + dir + "' does not exist");
+    }
+    if (exists(path) and !isFile(path)) {
+        return Err(path + ": not a regular file");
+    }
+    let tmp = path + ".tmp";
+    writeText(tmp, store_to_text(store));
+    # io.fs.rename is shadowed by libc's rename() in native builds; the
+    # runtime's own rename works everywhere.
+    runtime.fs().rename(tmp, path);
+    if (!exists(path) or exists(tmp)) {
+        return Err(path + ": could not replace the file");
+    }
+    return Ok(true);
+}

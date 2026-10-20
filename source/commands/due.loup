@@ -1,0 +1,81 @@
+@mode(host.dual)
+
+from cli.args import (Options);
+from model.task import (Store, Task);
+from model.dates import (days_between);
+from commands.common import (Outcome, new_outcome, usage_outcome, check_values, filter_tasks, sorted, id_width, task_line, detail_line, parse_id);
+
+pub const DEFAULT_DAYS: int = 7;
+
+# "(2 days overdue)", "(due today)", "(due tomorrow)", "(due in 3 days)".
+pub func due_note(due: string, today: string): string {
+    let n = days_between(today, due);
+    if (n < 0) {
+        let late = 0 - n;
+        if (late == 1) {
+            return "(1 day overdue)";
+        }
+        return "(" + str(late) + " days overdue)";
+    }
+    if (n == 0) {
+        return "(due today)";
+    }
+    if (n == 1) {
+        return "(due tomorrow)";
+    }
+    return "(due in " + str(n) + " days)";
+}
+
+# Open tasks with a due date no more than `days` days away (overdue ones
+# included), soonest first.
+pub func due_tasks(store: Store, days: int, opts: Options, today: string): list[Task] {
+    var soon: list[Task] = [];
+    for (t in store.tasks) {
+        if (!t.done and t.due.len() > 0 and days_between(today, t.due) <= days) {
+            soon.push(t);
+        }
+    }
+    return sorted(filter_tasks(soon, opts.tags, opts.priority, ""));
+}
+
+# todo due [DAYS] [-t TAG]... [-p PRIORITY] [-l]
+pub func cmd_due(store: Store, opts: Options, today: string): Outcome {
+    if (opts.operands.len() > 1) {
+        return usage_outcome("due: unexpected argument '" + opts.operands[1] + "'");
+    }
+    var days = DEFAULT_DAYS;
+    if (opts.operands.len() == 1) {
+        let text = opts.operands[0];
+        days = parse_id(text);
+        if (text == "0") {
+            days = 0;
+        }
+        if (days < 0) {
+            return usage_outcome("due: invalid number of days '" + text + "'");
+        }
+    }
+    let problem = check_values(opts.priority, opts.tags, "", today);
+    if (problem.len() > 0) {
+        return usage_outcome(problem);
+    }
+    var out = new_outcome();
+    let shown = due_tasks(store, days, opts, today);
+    if (shown.len() == 0) {
+        if (days == 0) {
+            out.lines.push("Nothing due today.");
+        } else if (days == 1) {
+            out.lines.push("Nothing due by tomorrow.");
+        } else {
+            out.lines.push("Nothing due in the next " + str(days) + " days.");
+        }
+        return out;
+    }
+    let width = id_width(shown);
+    for (t in shown) {
+        out.lines.push(task_line(t, width) + "  " + due_note(t.due, today));
+        if (opts.long) {
+            out.lines.push(detail_line(t, width));
+        }
+    }
+    return out;
+}

@@ -1,28 +1,48 @@
 @mode(host.dual)
 
-from appinfo import (APP_NAME, APP_VERSION, APP_SUMMARY);
-from cli.args import (DEFAULT_GREETING);
+from appinfo import (APP_NAME, APP_VERSION);
 
 pub func usage(): string {
     let lines = [
-        i"usage: {$ APP_NAME $} [OPTIONS] COMMAND [ARGS...]",
+        "usage: " + APP_NAME + " [OPTION]... COMMAND [ARG]...",
         "",
-        APP_SUMMARY,
+        "Keep a list of tasks in a JSON file: --file FILE, else $TODO_FILE, else",
+        "./todo.json.",
         "",
         "Commands:",
-        "  hello [NAME]          Print a greeting (NAME defaults to 'world')",
-        "  help                  Show this help",
+        "  add TEXT...      add a task              [-p PRIORITY] [-t TAG]... [-d DATE]",
+        "  list             list open tasks         [-a | --done] [-t TAG]... [-p PRIORITY]",
+        "                                           [-s TEXT] [--overdue] [-l]",
+        "  done ID...       mark tasks done",
+        "  undo ID...       mark tasks not done",
+        "  rm ID...         remove tasks",
+        "  edit ID [TEXT]   change a task           [-p PRIORITY] [-t TAG]... [--untag TAG]...",
+        "                                           [-d DATE]",
+        "  due [DAYS]       open tasks due within DAYS days (default 7), overdue",
+        "                   ones included           [-t TAG]... [-p PRIORITY] [-l]",
+        "  help             show this help",
         "",
         "Options:",
-        i"  -g, --greeting TEXT   Greeting used by 'hello' (default: {$ DEFAULT_GREETING $})",
-        "      --shout           Print the greeting in upper case",
-        "  -v, --verbose         Print diagnostic messages to stderr",
-        "  -h, --help            Show this help and exit",
-        "  -V, --version         Show the version and exit",
+        "  -f, --file FILE      the todo file",
+        "  -p, --priority P     high, medium, low (h, m, l) or none",
+        "  -t, --tag TAG        add a tag; with list and due, show tasks that have it",
+        "      --untag TAG      remove a tag (edit)",
+        "  -d, --due DATE       YYYY-MM-DD, today, tomorrow, +N (days), +Nw (weeks),",
+        "                       a weekday (the next one) or none",
+        "  -a, --all            list done tasks too",
+        "      --done           list only done tasks",
+        "  -s, --search TEXT    list tasks whose text contains TEXT (any case)",
+        "      --overdue        list only open tasks past their due date",
+        "  -l, --long           also show created and completed dates and the UUID",
+        "  -h, --help           display this help and exit",
+        "  -V, --version        output version information and exit",
+        "",
+        "Exit status: 0 on success, 1 if a task or the file could not be used,",
+        "2 on a usage error.",
     ];
     return lines.join("\n");
 }
 
 pub func version_line(): string {
-    return i"{$ APP_NAME $} {$ APP_VERSION $}";
+    return APP_NAME + " (loup-cmd-" + APP_NAME + ") " + APP_VERSION;
 }

@@ -1,0 +1,66 @@
+@mode(host.dual)
+
+from cli.args import (Options);
+from model.task import (Store, find_index, parse_priority);
+from model.dates import (parse_due);
+from commands.common import (Outcome, new_outcome, usage_outcome, fail, parse_id, check_values);
+
+# todo edit ID [TEXT...] [-p PRIORITY] [-t TAG]... [--untag TAG]... [-d DATE]
+pub func cmd_edit(edits store: Store, opts: Options, today: string): Outcome {
+    if (opts.operands.len() == 0) {
+        return usage_outcome("edit: missing task ID");
+    }
+    let id = parse_id(opts.operands[0]);
+    if (id < 0) {
+        return usage_outcome("invalid task ID '" + opts.operands[0] + "'");
+    }
+    let title = opts.operands.slice(1).join(" ").trim();
+    let has_change = title.len() > 0 or opts.given.contains("--priority") or opts.tags.len() > 0 or opts.untags.len() > 0 or opts.given.contains("--due");
+    if (!has_change) {
+        return usage_outcome("edit: nothing to change (give new text or an option)");
+    }
+    var all_tags: list[string] = [];
+    for (tag in opts.tags) {
+        all_tags.push(tag);
+    }
+    for (tag in opts.untags) {
+        all_tags.push(tag);
+    }
+    let problem = check_values(opts.priority, all_tags, opts.due, today);
+    if (problem.len() > 0) {
+        return usage_outcome(problem);
+    }
+
+    var out = new_outcome();
+    let i = find_index(store, id);
+    if (i < 0) {
+        fail(edits: out, "no task with ID " + str(id));
+        return out;
+    }
+    var t = store.tasks[i];
+    if (title.len() > 0) {
+        t.title = title;
+    }
+    if (opts.given.contains("--priority")) {
+        t.priority = parse_priority(opts.priority);
+    }
+    if (opts.given.contains("--due")) {
+        t.due = parse_due(opts.due, today);
+    }
+    var tags: list[string] = [];
+    for (tag in t.tags) {
+        if (!opts.untags.contains(tag)) {
+            tags.push(tag);
+        }
+    }
+    for (tag in opts.tags) {
+        if (!tags.contains(tag) and !opts.untags.contains(tag)) {
+            tags.push(tag);
+        }
+    }
+    t.tags = tags;
+    store.tasks[i] = t;
+    out.lines.push("Updated task " + str(id) + ": " + t.title);
+    out.changed = true;
+    return out;
+}

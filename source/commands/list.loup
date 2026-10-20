@@ -1,0 +1,54 @@
+@mode(host.dual)
+
+from cli.args import (Options);
+from model.task import (Store, Task);
+from commands.common import (Outcome, new_outcome, usage_outcome, check_values, filter_tasks, sorted, is_overdue, id_width, task_line, detail_line);
+
+# The tasks `todo list` shows for these options, in display order.
+pub func select_tasks(store: Store, opts: Options, today: string): list[Task] {
+    var by_state: list[Task] = [];
+    for (t in store.tasks) {
+        var keep = !t.done;
+        if (opts.done_only) {
+            keep = t.done;
+        } else if (opts.all) {
+            keep = true;
+        }
+        if (opts.overdue and !is_overdue(t, today)) {
+            keep = false;
+        }
+        if (keep) {
+            by_state.push(t);
+        }
+    }
+    return sorted(filter_tasks(by_state, opts.tags, opts.priority, opts.search));
+}
+
+# todo list [-a | --done] [-t TAG]... [-p PRIORITY] [-s TEXT] [--overdue] [-l]
+pub func cmd_list(store: Store, opts: Options, today: string): Outcome {
+    if (opts.operands.len() > 0) {
+        return usage_outcome("list: unexpected argument '" + opts.operands[0] + "'");
+    }
+    let problem = check_values(opts.priority, opts.tags, "", today);
+    if (problem.len() > 0) {
+        return usage_outcome(problem);
+    }
+    var out = new_outcome();
+    let shown = select_tasks(store, opts, today);
+    if (shown.len() == 0) {
+        if (store.tasks.len() == 0) {
+            out.lines.push("No tasks.");
+        } else {
+            out.lines.push("No matching tasks.");
+        }
+        return out;
+    }
+    let width = id_width(shown);
+    for (t in shown) {
+        out.lines.push(task_line(t, width));
+        if (opts.long) {
+            out.lines.push(detail_line(t, width));
+        }
+    }
+    return out;
+}

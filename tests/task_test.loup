@@ -1,0 +1,40 @@
+@mode(host.dual)
+
+from debug.assert import (expect, expectEq);
+from model.task import (Store, empty_store, add_task, find_index, remove_at, parse_priority, priority_rank, valid_tag);
+
+func test_add_assigns_increasing_ids(): void {
+    var store = empty_store();
+    let none: list[string] = [];
+    expectEq(add_task(edits: store, "a", "", none, "", "2026-10-20", "u1"), 1, "first id");
+    expectEq(add_task(edits: store, "b", "high", ["x", "x", "y"], "", "2026-10-20", "u2"), 2, "second id");
+    expectEq(store.next_id, 3, "next id");
+    expectEq(store.tasks[1].tags.len(), 2, "duplicate tags dropped");
+    expectEq(store.tasks[1].created, "2026-10-20", "created");
+}
+
+func test_ids_are_not_reused(): void {
+    var store = empty_store();
+    let none: list[string] = [];
+    add_task(edits: store, "a", "", none, "", "2026-10-20", "u1");
+    add_task(edits: store, "b", "", none, "", "2026-10-20", "u2");
+    remove_at(edits: store, find_index(store, 2));
+    expectEq(store.tasks.len(), 1, "one left");
+    expectEq(add_task(edits: store, "c", "", none, "", "2026-10-20", "u3"), 3, "id 2 not reused");
+    expectEq(find_index(store, 2), -1, "2 is gone");
+    expectEq(find_index(store, 3), 1, "3 is at index 1");
+}
+
+func test_priorities(): void {
+    expectEq(parse_priority("H"), "high", "H");
+    expectEq(parse_priority("med"), "medium", "med");
+    expectEq(parse_priority("low"), "low", "low");
+    expectEq(parse_priority("none"), "", "none");
+    expectEq(parse_priority("urgent"), "?", "unknown");
+    expect(priority_rank("high") > priority_rank("medium") and priority_rank("low") > priority_rank(""), "ranks");
+}
+
+func test_tags(): void {
+    expect(valid_tag("home") and valid_tag("q4-2026") and valid_tag("a.b_c"), "valid");
+    expect(!valid_tag("") and !valid_tag("two words") and !valid_tag("#x"), "invalid");
+}

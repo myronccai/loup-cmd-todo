@@ -1,0 +1,100 @@
+@mode(host.dual)
+
+# Runs one command against the todo file: load, run the pure command,
+# save the store if the command changed it, and print the outcome.
+
+from appinfo import (APP_NAME, EXIT_OK, EXIT_FAILURE, EXIT_USAGE);
+from cli.args import (Options);
+from core.random import (Random);
+from model.task import (Store);
+from model.dates import (today);
+from model.ids import (new_uuid, clock_seed);
+from storage.file import (store_path, load_store, save_store);
+from commands.common import (Outcome, new_outcome);
+from commands.add import (cmd_add);
+from commands.list import (cmd_list);
+from commands.done import (cmd_done, cmd_rm);
+from commands.edit import (cmd_edit);
+from commands.due import (cmd_due);
+
+# The options each command accepts besides --file, --help and --version.
+# An unknown command gets ["?"].
+pub func allowed_options(command: string): list[string] {
+    if (command == "add") {
+        return ["--priority", "--tag", "--due"];
+    }
+    if (command == "list" or command == "ls") {
+        return ["--all", "--done", "--tag", "--priority", "--search", "--overdue", "--long"];
+    }
+    if (command == "done" or command == "undo" or command == "rm") {
+        let none: list[string] = [];
+        return none;
+    }
+    if (command == "edit") {
+        return ["--priority", "--tag", "--untag", "--due"];
+    }
+    if (command == "due") {
+        return ["--tag", "--priority", "--long"];
+    }
+    return ["?"];
+}
+
+# Runs a known command on a loaded store.
+pub func execute(edits store: Store, opts: Options, day: string): Outcome {
+    let c = opts.command;
+    if (c == "add") {
+        var rng = Random(clock_seed());
+        let uuid = new_uuid(edits: rng);
+        return cmd_add(edits: store, opts, day, uuid);
+    }
+    if (c == "list" or c == "ls") {
+        return cmd_list(store, opts, day);
+    }
+    if (c == "done") {
+        return cmd_done(edits: store, opts, day, true);
+    }
+    if (c == "undo") {
+        return cmd_done(edits: store, opts, day, false);
+    }
+    if (c == "rm") {
+        return cmd_rm(edits: store, opts);
+    }
+    if (c == "edit") {
+        return cmd_edit(edits: store, opts, day);
+    }
+    return cmd_due(store, opts, day);
+}
+
+func print_outcome(out: Outcome): void {
+    for (line in out.lines) {
+        println(line);
+    }
+    for (message in out.errors) {
+        printErr(APP_NAME + ": " + message);
+    }
+    if (out.status == EXIT_USAGE) {
+        printErr("Try '" + APP_NAME + " --help' for more information.");
+    }
+}
+
+pub func run_command(opts: Options): int {
+    let path = store_path(opts.file);
+    let loaded = load_store(path);
+    if (loaded.is_err()) {
+        printErr(APP_NAME + ": " + loaded.unwrap_err());
+        return EXIT_FAILURE;
+    }
+    var store = loaded.unwrap();
+    let out = execute(edits: store, opts, today());
+    # Save before reporting, so "Added task 3" is never printed for a
+    # change that did not reach the file.
+    if (out.changed) {
+        let saved = save_store(path, store);
+        if (saved.is_err()) {
+            printErr(APP_NAME + ": " + saved.unwrap_err());
+            return EXIT_FAILURE;
+        }
+    }
+    print_outcome(out);
+    return out.status;
+}

@@ -1,0 +1,151 @@
+@mode(host.dual)
+
+# Due dates. Dates are stored as ISO strings (YYYY-MM-DD); user input may
+# also be relative to today.
+
+from core.datetime import (Date);
+
+const DIGITS: string = "0123456789";
+func weekday_names(): list[string] {
+    return ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+}
+
+func digits_value(text: string): int {
+    if (text.len() == 0) {
+        return -1;
+    }
+    var value = 0;
+    for (ch in text) {
+        let d = DIGITS.index_of(ch);
+        if (d < 0) {
+            return -1;
+        }
+        value = value * 10 + d;
+    }
+    return value;
+}
+
+func is_leap(year: int): bool {
+    return (year % 4 == 0 and year % 100 != 0) or year % 400 == 0;
+}
+
+pub func days_in_month(year: int, month: int): int {
+    if (month == 2) {
+        if (is_leap(year)) {
+            return 29;
+        }
+        return 28;
+    }
+    if (month == 4 or month == 6 or month == 9 or month == 11) {
+        return 30;
+    }
+    return 31;
+}
+
+# Whether `text` is a real calendar date written YYYY-MM-DD.
+pub func valid_iso(text: string): bool {
+    if (text.len() != 10 or text.slice(4, 5) != "-" or text.slice(7, 8) != "-") {
+        return false;
+    }
+    let year = digits_value(text.slice(0, 4));
+    let month = digits_value(text.slice(5, 7));
+    let day = digits_value(text.slice(8, 10));
+    if (year < 1 or month < 1 or month > 12 or day < 1) {
+        return false;
+    }
+    return day <= days_in_month(year, month);
+}
+
+# A Date for a valid YYYY-MM-DD string.
+pub func to_date(iso: string): Date {
+    return Date(digits_value(iso.slice(0, 4)), digits_value(iso.slice(5, 7)), digits_value(iso.slice(8, 10)));
+}
+
+# Days from `start` to `end` (both YYYY-MM-DD); negative when `end` is earlier.
+pub func days_between(start: string, end: string): int {
+    return to_date(start).daysUntil(to_date(end));
+}
+
+pub func add_days(iso: string, n: int): string {
+    return to_date(iso).addDays(n).isoformat();
+}
+
+# Today's date: $TODO_TODAY when it is set (for tests and demos), else the
+# system date.
+pub func today(): string {
+    let fixed = env("TODO_TODAY") ?? "";
+    if (valid_iso(fixed)) {
+        return fixed;
+    }
+    return Date.today().isoformat();
+}
+
+# Resolves a due-date argument against today:
+#   YYYY-MM-DD, today, tomorrow, +N (days), +Nw (weeks), a weekday name
+#   (mon ... sun: the next one after today), or none (no due date, "").
+# Returns "?" when the argument is none of these.
+pub func parse_due(text: string, today_iso: string): string {
+    let t = text.toLowerCase();
+    if (t == "none" or t == "-") {
+        return "";
+    }
+    if (valid_iso(t)) {
+        return t;
+    }
+    if (t == "today") {
+        return today_iso;
+    }
+    if (t == "tomorrow") {
+        return add_days(today_iso, 1);
+    }
+    if (t.startsWith("+") and t.len() > 1) {
+        var number = t.slice(1);
+        var scale = 1;
+        if (number.endsWith("d")) {
+            number = number.slice(0, number.len() - 1);
+        } else if (number.endsWith("w")) {
+            number = number.slice(0, number.len() - 1);
+            scale = 7;
+        }
+        let n = digits_value(number);
+        if (n < 0 or n > 36500) {
+            return "?";
+        }
+        return add_days(today_iso, n * scale);
+    }
+    if (t.len() >= 3) {
+        let names = weekday_names();
+        var i = 0;
+        while (i < names.len()) {
+            if (names[i].startsWith(t)) {
+                # weekday(): Monday is 0.
+                let now = to_date(today_iso).weekday();
+                var ahead = (i - now + 7) % 7;
+                if (ahead == 0) {
+                    ahead = 7;
+                }
+                return add_days(today_iso, ahead);
+            }
+            i += 1;
+        }
+    }
+    return "?";
+}
+
+# "today", "tomorrow", "in 3 days", "yesterday", "2 days ago".
+pub func relative_day(due: string, today_iso: string): string {
+    let n = days_between(today_iso, due);
+    if (n == 0) {
+        return "today";
+    }
+    if (n == 1) {
+        return "tomorrow";
+    }
+    if (n == -1) {
+        return "yesterday";
+    }
+    if (n > 1) {
+        return "in " + str(n) + " days";
+    }
+    return str(0 - n) + " days ago";
+}

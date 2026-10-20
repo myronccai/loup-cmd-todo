@@ -1,0 +1,135 @@
+@mode(host.dual)
+
+# The data model: a store holds the tasks and the next ID to hand out. IDs
+# are never reused, so a removed task's ID stays unused.
+
+pub struct Task {
+    pub var id: int;
+    pub var uuid: string;
+    pub var title: string;
+    pub var done: bool;
+    # "", "low", "medium" or "high".
+    pub var priority: string;
+    pub var tags: list[string];
+    # "" or YYYY-MM-DD.
+    pub var due: string;
+    pub var created: string;
+    pub var completed: string;
+}
+
+pub struct Store {
+    pub var next_id: int;
+    pub var tasks: list[Task];
+}
+
+pub func empty_store(): Store {
+    let tasks: list[Task] = [];
+    return Store(next_id = 1, tasks = tasks);
+}
+
+# The index of the task with this ID, or -1.
+pub func find_index(store: Store, id: int): int {
+    var i = 0;
+    while (i < store.tasks.len()) {
+        if (store.tasks[i].id == id) {
+            return i;
+        }
+        i += 1;
+    }
+    return -1;
+}
+
+# 3 for high down to 0 for none, for sorting.
+pub func priority_rank(priority: string): int {
+    if (priority == "high") {
+        return 3;
+    }
+    if (priority == "medium") {
+        return 2;
+    }
+    if (priority == "low") {
+        return 1;
+    }
+    return 0;
+}
+
+# Normalises a priority argument: h/high, m/med/medium, l/low, or
+# none/- (no priority, returned as ""). Returns "?" when it is none of these.
+pub func parse_priority(text: string): string {
+    let p = text.toLowerCase();
+    if (p == "h" or p == "high") {
+        return "high";
+    }
+    if (p == "m" or p == "med" or p == "medium") {
+        return "medium";
+    }
+    if (p == "l" or p == "low") {
+        return "low";
+    }
+    if (p == "none" or p == "-") {
+        return "";
+    }
+    return "?";
+}
+
+# Whether a tag is acceptable: letters, digits, '-', '_' and '.'.
+pub func valid_tag(tag: string): bool {
+    if (tag.len() == 0) {
+        return false;
+    }
+    let allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.";
+    for (ch in tag) {
+        if (allowed.index_of(ch) < 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+pub func has_tag(task: Task, tag: string): bool {
+    return task.tags.contains(tag);
+}
+
+# Every Task is built here. (Native builds of Loup 1.26.0 corrupt a struct
+# that is constructed both in its own module and in another one, so other
+# modules call this instead of writing Task(...).)
+pub func new_task(id: int, uuid: string, title: string, done: bool, priority: string, tags: list[string], due: string, created: string, completed: string): Task {
+    return Task(
+        id = id,
+        uuid = uuid,
+        title = title,
+        done = done,
+        priority = priority,
+        tags = tags,
+        due = due,
+        created = created,
+        completed = completed,
+    );
+}
+
+# Adds a task and returns its ID.
+pub func add_task(edits store: Store, title: string, priority: string, tags: list[string], due: string, today: string, uuid: string): int {
+    var unique_tags: list[string] = [];
+    for (tag in tags) {
+        if (!unique_tags.contains(tag)) {
+            unique_tags.push(tag);
+        }
+    }
+    let id = store.next_id;
+    store.tasks.push(new_task(id, uuid, title, false, priority, unique_tags, due, today, ""));
+    store.next_id += 1;
+    return id;
+}
+
+# Removes the task at index i.
+pub func remove_at(edits store: Store, i: int): void {
+    var kept: list[Task] = [];
+    var j = 0;
+    while (j < store.tasks.len()) {
+        if (j != i) {
+            kept.push(store.tasks[j]);
+        }
+        j += 1;
+    }
+    store.tasks = kept;
+}

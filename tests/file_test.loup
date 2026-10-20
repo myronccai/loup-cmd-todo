@@ -1,0 +1,59 @@
+@mode(host.dual)
+
+from debug.assert import (expect, expectEq);
+from model.task import (Store, empty_store, add_task);
+from storage.file import (store_to_text, store_from_text, store_path);
+
+func sample(): Store {
+    var store = empty_store();
+    add_task(edits: store, "buy \"milk\"", "high", ["home"], "2026-10-21", "2026-10-20", "123e4567-e89b-42d3-a456-426614174000");
+    let none: list[string] = [];
+    add_task(edits: store, "call bob", "", none, "", "2026-10-20", "");
+    return store;
+}
+
+func test_text_format(): void {
+    let text = store_to_text(sample());
+    expect(text.startsWith("{\n  \"version\": 1,\n  \"next_id\": 3,\n  \"tasks\": [\n    {\n      \"id\": 1,"), "header");
+    expect(text.contains("\"title\": \"buy \\\"milk\\\"\""), "escaped title");
+    expect(text.contains("\"tags\": [\"home\"]"), "tags on one line");
+    expect(text.contains("\"priority\": null"), "no priority is null");
+    expect(text.endsWith("}\n"), "final newline");
+}
+
+func test_round_trip(): void {
+    let text = store_to_text(sample());
+    let back = store_from_text(text).unwrap();
+    expectEq(back.tasks.len(), 2, "two tasks");
+    expectEq(back.tasks[0].title, "buy \"milk\"", "title");
+    expectEq(back.tasks[0].due, "2026-10-21", "due");
+    expectEq(back.tasks[1].priority, "", "no priority");
+    expectEq(back.next_id, 3, "next id");
+    expectEq(store_to_text(back), text, "same text again");
+}
+
+func test_next_id_never_goes_back(): void {
+    let low = store_from_text("{\"next_id\": 1, \"tasks\": [{\"id\": 7, \"title\": \"x\"}]}").unwrap();
+    expectEq(low.next_id, 8, "past the highest id");
+    let high = store_from_text("{\"next_id\": 20, \"tasks\": []}").unwrap();
+    expectEq(high.next_id, 20, "stored next_id kept");
+}
+
+func test_minimal_task_gets_defaults(): void {
+    let store = store_from_text("{\"tasks\": [{\"id\": 1, \"title\": \"x\"}]}").unwrap();
+    let t = store.tasks[0];
+    expect(!t.done and t.priority == "" and t.tags.len() == 0 and t.due == "", "defaults");
+}
+
+func test_invalid_files(): void {
+    expectEq(store_from_text("[").unwrap_err(), "invalid JSON: unexpected end of input at character 2", "bad JSON");
+    expectEq(store_from_text("{}").unwrap_err(), "not a todo file (no 'tasks' list)", "no tasks");
+    expectEq(store_from_text("{\"tasks\": [{\"title\": \"x\"}]}").unwrap_err(), "task 1: 'id' and 'title' are required", "no id");
+    expectEq(store_from_text("{\"tasks\": [{\"id\": 1, \"title\": \"x\", \"due\": \"soon\"}]}").unwrap_err(), "task 1: 'due' must be a YYYY-MM-DD date", "bad due");
+    expectEq(store_from_text("{\"tasks\": [{\"id\": 1, \"title\": \"x\"}, {\"id\": 1, \"title\": \"y\"}]}").unwrap_err(), "task 2: duplicate id 1", "duplicate");
+    expectEq(store_from_text("{\"tasks\": [{\"id\": 1, \"title\": \"x\", \"uuid\": \"nope\"}]}").unwrap_err(), "task 1: 'uuid' is not a valid UUID", "bad uuid");
+}
+
+func test_store_path(): void {
+    expectEq(store_path("given.json"), "given.json", "--file wins");
+}

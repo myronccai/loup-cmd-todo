@@ -3,30 +3,86 @@
 # Command-line parsing. Loup 1.26 has no CLI library, so arguments are
 # parsed by hand into an Options value.
 #
-# Grammar: [OPTIONS] COMMAND [OPERANDS...]
+# Grammar: todo [OPTION]... COMMAND [ARG]...
 #   Options may appear anywhere before `--`; everything after `--` is an
-#   operand. Value options accept `--name VALUE` and `--name=VALUE`.
-
-pub const DEFAULT_GREETING: string = "Hello";
+#   argument. Value options accept `-x VALUE`, `--name VALUE` and
+#   `--name=VALUE`. `given` records the long name of every option used, so
+#   each command can reject the options that do not apply to it.
 
 pub struct Options {
     pub command: string;
     pub operands: list[string];
+    pub given: list[string];
     pub help: bool;
     pub version: bool;
-    pub verbose: bool;
-    pub shout: bool;
-    pub greeting: string;
+    pub file: string;
+    pub priority: string;
+    pub tags: list[string];
+    pub untags: list[string];
+    pub due: string;
+    pub all: bool;
+    pub done_only: bool;
+    pub search: string;
+    pub overdue: bool;
+    pub long: bool;
+}
+
+# The long name of a value option for `name` (short or long), or "".
+func value_option(name: string): string {
+    if (name == "-f" or name == "--file") {
+        return "--file";
+    }
+    if (name == "-p" or name == "--priority") {
+        return "--priority";
+    }
+    if (name == "-t" or name == "--tag") {
+        return "--tag";
+    }
+    if (name == "--untag") {
+        return "--untag";
+    }
+    if (name == "-d" or name == "--due") {
+        return "--due";
+    }
+    if (name == "-s" or name == "--search") {
+        return "--search";
+    }
+    return "";
+}
+
+# The long name of a flag for `name` (short or long), or "".
+func flag_option(name: string): string {
+    if (name == "-h" or name == "--help") {
+        return "--help";
+    }
+    if (name == "-V" or name == "--version") {
+        return "--version";
+    }
+    if (name == "-a" or name == "--all") {
+        return "--all";
+    }
+    if (name == "--done") {
+        return "--done";
+    }
+    if (name == "--overdue") {
+        return "--overdue";
+    }
+    if (name == "-l" or name == "--long") {
+        return "--long";
+    }
+    return "";
 }
 
 pub func parse_args(argv: list[string]): Result[Options, string] {
     var command = "";
     var operands: list[string] = [];
-    var help = false;
-    var version = false;
-    var verbose = false;
-    var shout = false;
-    var greeting = DEFAULT_GREETING;
+    var given: list[string] = [];
+    var file = "";
+    var priority = "";
+    var tags: list[string] = [];
+    var untags: list[string] = [];
+    var due = "";
+    var search = "";
     var only_operands = false;
 
     var i = 0;
@@ -35,7 +91,7 @@ pub func parse_args(argv: list[string]): Result[Options, string] {
         i += 1;
 
         if (only_operands or arg == "-" or !arg.startsWith("-")) {
-            if (command.is_empty()) {
+            if (command.len() == 0) {
                 command = arg;
             } else {
                 operands.push(arg);
@@ -49,50 +105,81 @@ pub func parse_args(argv: list[string]): Result[Options, string] {
 
         # Split `--name=value` into its name and inline value.
         var name = arg;
-        var inline_value: Option[string] = None;
+        var value = "";
+        var has_value = false;
         if (arg.startsWith("--") and arg.contains("=")) {
-            let parts = arg.split("=");
-            name = parts[0];
-            inline_value = Some(parts.slice(1).join("="));
+            let at = arg.index_of("=");
+            name = arg.slice(0, at);
+            value = arg.slice(at + 1);
+            has_value = true;
         }
 
-        if (name == "-g" or name == "--greeting") {
-            match inline_value {
-                Some(v) => { greeting = v; },
-                None => {
-                    if (i >= argv.len()) {
-                        return Err(i"option '{$ name $}' requires a value");
-                    }
-                    greeting = argv[i];
-                    i += 1;
-                },
+        let flag = flag_option(name);
+        if (flag.len() > 0) {
+            if (has_value) {
+                return Err("option '" + name + "' does not take a value");
             }
+            given.push(flag);
             continue;
         }
 
-        if (inline_value.is_some()) {
-            return Err(i"option '{$ name $}' does not take a value");
+        let long = value_option(name);
+        if (long.len() == 0) {
+            return Err("unknown option '" + name + "'");
         }
-        if (name == "-h" or name == "--help") {
-            help = true;
-        } else if (name == "-V" or name == "--version") {
-            version = true;
-        } else if (name == "-v" or name == "--verbose") {
-            verbose = true;
-        } else if (name == "--shout") {
-            shout = true;
+        if (!has_value) {
+            if (i >= argv.len()) {
+                return Err("option '" + name + "' requires a value");
+            }
+            value = argv[i];
+            i += 1;
+        }
+        given.push(long);
+        if (long == "--file") {
+            file = value;
+        } else if (long == "--priority") {
+            priority = value;
+        } else if (long == "--tag") {
+            tags.push(value);
+        } else if (long == "--untag") {
+            untags.push(value);
+        } else if (long == "--due") {
+            due = value;
         } else {
-            return Err(i"unknown option '{$ name $}'");
+            search = value;
         }
     }
 
     return Ok(Options(
         command = command,
         operands = operands,
-        help = help,
-        version = version,
-        verbose = verbose,
-        shout = shout,
-        greeting = greeting,
+        given = given,
+        help = given.contains("--help"),
+        version = given.contains("--version"),
+        file = file,
+        priority = priority,
+        tags = tags,
+        untags = untags,
+        due = due,
+        all = given.contains("--all"),
+        done_only = given.contains("--done"),
+        search = search,
+        overdue = given.contains("--overdue"),
+        long = given.contains("--long"),
     ));
+}
+
+# The options in `opts.given` that `allowed` does not list (--file, --help
+# and --version are always allowed).
+pub func disallowed(opts: Options, allowed: list[string]): list[string] {
+    var bad: list[string] = [];
+    for (name in opts.given) {
+        if (name == "--file" or name == "--help" or name == "--version") {
+            continue;
+        }
+        if (!allowed.contains(name) and !bad.contains(name)) {
+            bad.push(name);
+        }
+    }
+    return bad;
 }

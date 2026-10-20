@@ -1,0 +1,22 @@
+# Tasks: todo
+
+- [x] 1. Parse options anywhere before `--`, record which were given, reject options a command does not take
+  - _Requirements: 6.1, 6.2, 6.3, 6.4_
+- [x] 2. JSON reader and writer; Store ⇄ JSON with validation
+  - _Requirements: 1.3, 1.5_
+- [x] 3. Find the file (`--file`, `$TODO_FILE`, `./todo.json`); load, and save atomically
+  - _Requirements: 1.1, 1.2, 1.4, 1.5_
+- [x] 4. Task model: never-reused IDs, priorities, tags, UUIDs
+  - _Requirements: 1.6, 2.2, 2.3_
+- [x] 5. Due dates: ISO, relative and weekday forms; `$TODO_TODAY`
+  - _Requirements: 2.4, 5.4_
+- [x] 6. `add`
+  - _Requirements: 2.1, 2.5_
+- [x] 7. `list` with ordering, filters and the long format
+  - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
+- [x] 8. `done`, `undo`, `rm`, `edit`
+  - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5_
+- [x] 9. `due`
+  - _Requirements: 5.1, 5.2, 5.3_
+- [x] 10. Unit tests; end-to-end tests of the binary and of `loup run`
+  - _Requirements: all_

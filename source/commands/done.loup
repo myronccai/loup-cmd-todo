@@ -1,0 +1,81 @@
+@mode(host.dual)
+
+from cli.args import (Options);
+from model.task import (Store, find_index, remove_at);
+from commands.common import (Outcome, new_outcome, usage_outcome, fail, parse_id);
+
+# The IDs in the operands, or a usage error naming the first bad one.
+pub func parse_ids(verb: string, operands: list[string]): Result[list[int], string] {
+    var ids: list[int] = [];
+    if (operands.len() == 0) {
+        return Err(verb + ": missing task ID");
+    }
+    for (text in operands) {
+        let id = parse_id(text);
+        if (id < 0) {
+            return Err("invalid task ID '" + text + "'");
+        }
+        ids.push(id);
+    }
+    return Ok(ids);
+}
+
+# todo done ID... (finished = true) and todo undo ID... (finished = false)
+pub func cmd_done(edits store: Store, opts: Options, today: string, finished: bool): Outcome {
+    var verb = "undo";
+    if (finished) {
+        verb = "done";
+    }
+    let parsed = parse_ids(verb, opts.operands);
+    if (parsed.is_err()) {
+        return usage_outcome(parsed.unwrap_err());
+    }
+    var out = new_outcome();
+    for (id in parsed.unwrap()) {
+        let i = find_index(store, id);
+        if (i < 0) {
+            fail(edits: out, "no task with ID " + str(id));
+            continue;
+        }
+        var t = store.tasks[i];
+        if (t.done == finished) {
+            if (finished) {
+                out.lines.push("Task " + str(id) + " is already done.");
+            } else {
+                out.lines.push("Task " + str(id) + " is not done.");
+            }
+            continue;
+        }
+        t.done = finished;
+        if (finished) {
+            t.completed = today;
+            out.lines.push("Completed task " + str(id) + ": " + t.title);
+        } else {
+            t.completed = "";
+            out.lines.push("Reopened task " + str(id) + ": " + t.title);
+        }
+        store.tasks[i] = t;
+        out.changed = true;
+    }
+    return out;
+}
+
+# todo rm ID...
+pub func cmd_rm(edits store: Store, opts: Options): Outcome {
+    let parsed = parse_ids("rm", opts.operands);
+    if (parsed.is_err()) {
+        return usage_outcome(parsed.unwrap_err());
+    }
+    var out = new_outcome();
+    for (id in parsed.unwrap()) {
+        let i = find_index(store, id);
+        if (i < 0) {
+            fail(edits: out, "no task with ID " + str(id));
+            continue;
+        }
+        out.lines.push("Removed task " + str(id) + ": " + store.tasks[i].title);
+        remove_at(edits: store, i);
+        out.changed = true;
+    }
+    return out;
+}

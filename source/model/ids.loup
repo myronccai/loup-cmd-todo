@@ -1,0 +1,52 @@
+@mode(host.dual)
+
+# Task UUIDs. core.uuid's Uuid.v4() needs an entropy source that neither
+# native builds nor the self-hosted interpreter of Loup 1.26.0 provide, so
+# the 16 random bytes come from core.random seeded with the clock; core.uuid
+# then checks the result.
+
+from core.random import (Random);
+from core.uuid import (Uuid);
+import system.time as clock;
+
+const HEX: string = "0123456789abcdef";
+
+pub func clock_seed(): int {
+    return clock.realtimeNs() ^ clock.monotonicNs();
+}
+
+func hex_byte(b: int): string {
+    return HEX.slice(b / 16, b / 16 + 1) + HEX.slice(b % 16, b % 16 + 1);
+}
+
+# A random (version 4, RFC 4122 variant) UUID drawn from `rng`.
+pub func new_uuid(edits rng: Random): string {
+    var parts: list[string] = [];
+    var i = 0;
+    while (i < 16) {
+        var b = 0;
+        safe {
+            b = rng.intRange(0, 255) & 0xFF;
+        }
+        if (i == 6) {
+            b = (b & 0x0F) | 0x40;
+        }
+        if (i == 8) {
+            b = (b & 0x3F) | 0x80;
+        }
+        if (i == 4 or i == 6 or i == 8 or i == 10) {
+            parts.push("-");
+        }
+        parts.push(hex_byte(b));
+        i += 1;
+    }
+    let text = parts.join("");
+    if (!Uuid.isValid(text)) {
+        throw ValueError("generated an invalid UUID: " + text);
+    }
+    return text;
+}
+
+pub func valid_uuid(text: string): bool {
+    return Uuid.isValid(text);
+}
