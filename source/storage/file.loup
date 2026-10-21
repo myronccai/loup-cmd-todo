@@ -176,7 +176,8 @@ func task_from_json(obj: Json, n: int, edits errors: list[string]): Task {
     let due = get_text(obj, "due", edits: problems);
     let created = get_text(obj, "created", edits: problems);
     let completed = get_text(obj, "completed", edits: problems);
-    let t = new_task(id, uuid, title, done, priority, tags, due, created, completed);
+    let t = new_task(id = id, uuid = uuid, title = title, done = done,
+        priority = priority, tags = tags, due = due, created = created, completed = completed);
     if (t.id < 1) {
         problems.push("'id' must be positive");
     }

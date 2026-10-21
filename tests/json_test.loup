@@ -39,6 +39,18 @@ func test_nested_round_trip(): void {
     expectEq(write_json(parse_json(text).unwrap(), ""), text, "round trip");
 }
 
+func test_lone_surrogates(): void {
+    let pair = "\"\\ud83d\\ude00\"";
+    expect(parse_json(pair).is_ok(), "a high and a low half make one character");
+    expectEq(parse_json("\"\\ud800\"").unwrap_err(), "lone surrogate in \\u escape at character 8", "high half at the end");
+    expect(parse_json("\"\\ud800x\"").is_err(), "high half before a character");
+    expect(parse_json("\"\\ud800\\n\"").is_err(), "high half before another escape");
+    expect(parse_json("\"\\ud800\\u0041\"").is_err(), "high half before a non-surrogate");
+    expect(parse_json("\"\\ud800\\ud800\"").is_err(), "two high halves");
+    expectEq(parse_json("\"\\udc00\"").unwrap_err(), "lone surrogate in \\u escape at character 8", "low half alone");
+    expect(parse_json("\"\\ud800\\uzzzz\"").is_err(), "bad hex after a high half");
+}
+
 func test_field(): void {
     let doc = parse_json("{\"x\": 1, \"y\": \"z\"}").unwrap();
     expect(field(doc, "x").found, "x found");

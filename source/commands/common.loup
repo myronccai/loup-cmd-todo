@@ -1,8 +1,8 @@
 @mode(host.dual)
 
 # todo commands: what every command shares: the Outcome it returns, ID
-# parsing, the filters, the sort order and the one-line rendering of a
-# task.
+# parsing, the filters, the sort order (TaskOrder) and the one-line
+# rendering of a task.
 #
 # Runtime: host.dual. Compiled into the native binary build/todo by `make
 # build`; `loup run source/main.loup` interprets the same code, and CI runs
@@ -13,7 +13,8 @@
 # Only commands.runner touches the file and prints.
 
 from appinfo import (EXIT_OK, EXIT_FAILURE, EXIT_USAGE);
-from model.task import (Task, priority_rank, parse_priority, valid_tag);
+from core.string_utils import (padLeft, padRight);
+from model.task import (Task, priority_rank, parse_priority, valid_tag, has_tag);
 from model.dates import (parse_due, days_between);
 
 # The result of a command: lines for standard output, messages for standard
@@ -88,8 +89,10 @@ pub func check_values(priority: string, tags: list[string], due: string, today: 
 
 # A sortable number for a due date: YYYYMMDD, or a large number for none.
 func due_key(due: string): int {
+    # Past every YYYYMMDD, so tasks without a due date sort last.
+    const NO_DUE: int = 99_999_999;
     if (due.len() != 10) {
-        return 99999999;
+        return NO_DUE;
     }
     var value = 0;
     for (ch in due) {
@@ -101,62 +104,61 @@ func due_key(due: string): int {
     return value;
 }
 
-# Sort order: open tasks first, then by due date (none last), priority
-# (high first) and ID.
-pub func before(a: Task, b: Task): bool {
-    if (a.done != b.done) {
-        return !a.done;
+## The sort key of a task: open tasks first, then by due date (none
+## last), priority (high first) and ID. Implementing Comparable gives the
+## keys `<`, `>`, `<=` and `>=` through compareTo. The fields are copied
+## out of the task once, so comparisons do no parsing.
+pub class TaskOrder implements Comparable[TaskOrder] {
+    pub let done: bool;
+    pub let due: int;
+    pub let rank: int;
+    pub let id: int;
+
+    new(t: Task) {
+        this.done = t.done;
+        this.due = due_key(t.due);
+        this.rank = priority_rank(t.priority);
+        this.id = t.id;
     }
-    let da = due_key(a.due);
-    let db = due_key(b.due);
-    if (da != db) {
-        return da < db;
+
+    ## Negative, zero or positive as this key sorts before, with or after
+    ## `other`.
+    pub func compareTo(other: TaskOrder): int {
+        if (this.done != other.done) {
+            return if (this.done) { 1 } else { -1 };
+        }
+        if (this.due != other.due) {
+            return this.due - other.due;
+        }
+        if (this.rank != other.rank) {
+            return other.rank - this.rank;
+        }
+        return this.id - other.id;
     }
-    let pa = priority_rank(a.priority);
-    let pb = priority_rank(b.priority);
-    if (pa != pb) {
-        return pa > pb;
-    }
-    return a.id < b.id;
 }
 
-# A stable insertion sort with `before`.
+## The tasks in TaskOrder. A stable insertion sort that shifts entries in
+## place, with each task's key computed once alongside it: todo lists are
+## short, and native builds never free a list built per insertion.
 pub func sorted(tasks: list[Task]): list[Task] {
     var out: list[Task] = [];
+    var keys: list[TaskOrder] = [];
     for (t in tasks) {
-        var at = out.len();
-        while (at > 0 and before(t, out[at - 1])) {
+        let key = TaskOrder(t);
+        out.push(t);
+        keys.push(key);
+        # Move the entries that sort after t one place right, then put t in
+        # the gap. `<` (not `<=`) keeps equal keys in input order.
+        var at = out.len() - 1;
+        while (at > 0 and key < keys[at - 1]) {
+            out[at] = out[at - 1];
+            keys[at] = keys[at - 1];
             at -= 1;
         }
-        var next: list[Task] = [];
-        var i = 0;
-        while (i < out.len()) {
-            if (i == at) {
-                next.push(t);
-            }
-            next.push(out[i]);
-            i += 1;
-        }
-        if (at == out.len()) {
-            next.push(t);
-        }
-        out = next;
+        out[at] = t;
+        keys[at] = key;
     }
     return out;
-}
-
-func pad_right(text: string, width: int): string {
-    if (text.len() >= width) {
-        return text;
-    }
-    return text + " ".repeat(width - text.len());
-}
-
-func pad_left(text: string, width: int): string {
-    if (text.len() >= width) {
-        return text;
-    }
-    return " ".repeat(width - text.len()) + text;
 }
 
 # The width of the widest ID in `tasks` (at least 2).
@@ -186,7 +188,11 @@ pub func task_line(t: Task, width: int): string {
     if (due.len() == 0) {
         due = "-";
     }
-    var parts: list[string] = [pad_left(str(t.id), width), " ", mark, " ", pad_right(priority, 6), " ", pad_right(due, 10), "  ", t.title];
+    # One padding call per statement (see NATIVE-NOTES, W20).
+    let id_text = padLeft(str(t.id), width, " ");
+    let priority_text = padRight(priority, 6, " ");
+    let due_text = padRight(due, 10, " ");
+    var parts: list[string] = [id_text, " ", mark, " ", priority_text, " ", due_text, "  ", t.title];
     for (tag in t.tags) {
         parts.push(" #" + tag);
     }
@@ -202,28 +208,27 @@ pub func detail_line(t: Task, width: int): string {
     return text + ", uuid " + t.uuid;
 }
 
-# The tasks among `tasks` that match the filters common to list and due:
-# every --tag, the --priority (if any) and the --search text.
+## The tasks among `tasks` that match the filters common to list and due:
+## every --tag, the --priority (if any) and the --search text.
 pub func filter_tasks(tasks: list[Task], tags: list[string], priority: string, search: string): list[Task] {
     let wanted_priority = parse_priority(priority);
     let needle = search.toLowerCase();
     var out: list[Task] = [];
-    for (t in tasks) {
-        var keep = true;
+    # A failed test moves straight on to the next task (from inside the tag
+    # loop, by its label); a task that gets through every test is kept.
+    candidates: for (t in tasks) {
         for (tag in tags) {
-            if (!t.tags.contains(tag)) {
-                keep = false;
+            if (!has_tag(t, tag)) {
+                continue candidates;
             }
         }
         if (priority.len() > 0 and t.priority != wanted_priority) {
-            keep = false;
+            continue;
         }
         if (needle.len() > 0 and t.title.toLowerCase().index_of(needle) < 0) {
-            keep = false;
+            continue;
         }
-        if (keep) {
-            out.push(t);
-        }
+        out.push(t);
     }
     return out;
 }

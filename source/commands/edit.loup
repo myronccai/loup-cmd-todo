@@ -26,13 +26,8 @@ pub func cmd_edit(edits store: Store, opts: Options, today: string): Outcome {
     if (!has_change) {
         return usage_outcome("edit: nothing to change (give new text or an option)");
     }
-    var all_tags: list[string] = [];
-    for (tag in opts.tags) {
-        all_tags.push(tag);
-    }
-    for (tag in opts.untags) {
-        all_tags.push(tag);
-    }
+    # Tags to add and tags to remove follow the same rules.
+    let all_tags = opts.tags + opts.untags;
     let problem = check_values(opts.priority, all_tags, opts.due, today);
     if (problem.len() > 0) {
         return usage_outcome(problem);

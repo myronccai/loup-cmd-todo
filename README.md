@@ -175,7 +175,7 @@ $ build/todo list -t home
 ```
 
 and `make ci` holds them to it: `make e2e` runs `tests/e2e.sh` against the
-binary and `make e2e-run` runs the same 65 cases through `loup run`.
+binary and `make e2e-run` runs the same 66 cases through `loup run`.
 
 **The rest of the template, used for real.** A subcommand dispatcher with
 per-command option checks; commands as pure functions from a `Store` to an
@@ -189,7 +189,9 @@ does not use the standard library the roadmap planned for:
 - `system.json` is not used by the program: its `parse` and `stringify` are
   host builtins that native builds cannot link. `source/storage/json.loup`
   is a small JSON reader and writer instead; the unit tests check that it
-  and `system.json` read each other's output.
+  and `system.json` read each other's output. It is strict about `\u`
+  escapes: half of a UTF-16 surrogate pair on its own (`\ud800`) makes the
+  file invalid, since it stands for no character.
 - `core.uuid`'s `Uuid.v4()` needs an entropy source that native builds and
   the self-hosted `loup run` lack, so UUIDs are drawn from `core.random`
   seeded with the clock, and `core.uuid` only validates them.

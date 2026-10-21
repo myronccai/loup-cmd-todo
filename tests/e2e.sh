@@ -169,6 +169,8 @@ check_err "invalid JSON"        1 "todo: $TMP/bad.json: invalid JSON: unexpected
 printf '{"tasks": [{"id": 1}]}' > "$TMP/bad2.json"
 check_err "invalid task"        1 "todo: $TMP/bad2.json: task 1: 'id' and 'title' are required"$'\n' list -f "$TMP/bad2.json"
 check_true "bad file untouched" grep -qx '{"tasks": \[{"id": 1}\]}' "$TMP/bad2.json"
+printf '{"tasks": [{"id": 1, "title": "\\ud83d"}]}' > "$TMP/bad3.json"
+check_err "lone surrogate"      1 "todo: $TMP/bad3.json: invalid JSON: lone surrogate in \\u escape at character 38"$'\n' list -f "$TMP/bad3.json"
 
 # Usage errors: status 2
 check_err "no command"         2 "todo: no command given"$'\n'"$USAGE_HINT"

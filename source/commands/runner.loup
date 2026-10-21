@@ -9,7 +9,9 @@
 #
 # Structure: allowed_options is the table cli.app checks the options
 # against before anything is loaded; execute picks the command function;
-# run_command does the I/O around it, in the order above.
+# run_command does the I/O around it, in the order above. Loading and
+# saving both return a Result; run_command unwraps them with `attempt`
+# inside one try, so either failure ends in the same `catch Err` branch.
 
 from appinfo import (APP_NAME, EXIT_OK, EXIT_FAILURE, EXIT_USAGE);
 from cli.args import (Options);
@@ -86,24 +88,24 @@ func print_outcome(out: Outcome): void {
     }
 }
 
+## Loads the todo file, runs the command, saves a changed store and prints
+## the outcome; returns the exit status.
 pub func run_command(opts: Options): int {
     let path = store_path(opts.file);
-    let loaded = load_store(path);
-    if (loaded.is_err()) {
-        printErr(APP_NAME + ": " + loaded.unwrap_err());
+    try {
+        # `attempt` yields the Ok value, or jumps to `catch Err` below with
+        # the message (load_store and save_store already name the file).
+        var store = attempt load_store(path);
+        let out = execute(edits: store, opts, today());
+        # Save before reporting, so "Added task 3" is never printed for a
+        # change that did not reach the file.
+        if (out.changed) {
+            attempt save_store(path, store);
+        }
+        print_outcome(out);
+        return out.status;
+    } catch Err(message) {
+        printErr(APP_NAME + ": " + message);
         return EXIT_FAILURE;
     }
-    var store = loaded.unwrap();
-    let out = execute(edits: store, opts, today());
-    # Save before reporting, so "Added task 3" is never printed for a
-    # change that did not reach the file.
-    if (out.changed) {
-        let saved = save_store(path, store);
-        if (saved.is_err()) {
-            printErr(APP_NAME + ": " + saved.unwrap_err());
-            return EXIT_FAILURE;
-        }
-    }
-    print_outcome(out);
-    return out.status;
 }

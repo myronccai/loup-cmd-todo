@@ -7,7 +7,8 @@
 # the end-to-end tests in both lanes. core.uuid's Uuid.v4() needs an
 # entropy source that neither native builds nor the self-hosted interpreter
 # of Loup 1.26.0 provide, so the 16 random bytes come from core.random
-# seeded with the clock; core.uuid then checks the result.
+# seeded with the clock; core.uuid then parses the result and checks that
+# it really is a version 4 UUID.
 
 from core.random import (Random);
 from core.uuid import (Uuid);
@@ -15,6 +16,7 @@ import system.time as clock;
 
 const HEX: string = "0123456789abcdef";
 
+## A seed for core.random that differs from run to run.
 pub func clock_seed(): int {
     return clock.realtimeNs() ^ clock.monotonicNs();
 }
@@ -23,7 +25,7 @@ func hex_byte(b: int): string {
     return HEX.slice(b / 16, b / 16 + 1) + HEX.slice(b % 16, b % 16 + 1);
 }
 
-# A random (version 4, RFC 4122 variant) UUID drawn from `rng`.
+## A random (version 4, RFC 4122 variant) UUID drawn from `rng`.
 pub func new_uuid(edits rng: Random): string {
     var parts: list[string] = [];
     var i = 0;
@@ -32,11 +34,15 @@ pub func new_uuid(edits rng: Random): string {
         safe {
             b = rng.intRange(0, 255) & 0xFF;
         }
+        # Octet 6 carries the version in its high nibble (0100 = 4) and
+        # octet 8 the variant in its top two bits (10 = RFC 4122).
         if (i == 6) {
-            b = (b & 0x0F) | 0x40;
+            b &= 0x0F;
+            b |= 0x40;
         }
         if (i == 8) {
-            b = (b & 0x3F) | 0x80;
+            b &= 0x3F;
+            b |= 0x80;
         }
         if (i == 4 or i == 6 or i == 8 or i == 10) {
             parts.push("-");
@@ -45,12 +51,14 @@ pub func new_uuid(edits rng: Random): string {
         i += 1;
     }
     let text = parts.join("");
-    if (!Uuid.isValid(text)) {
+    if (!Uuid.isValid(text) or Uuid.parse(text).version() != 4) {
         throw ValueError("generated an invalid UUID: " + text);
     }
     return text;
 }
 
+## Whether core.uuid accepts `text` as a UUID (any version, with or
+## without the dashes).
 pub func valid_uuid(text: string): bool {
     return Uuid.isValid(text);
 }

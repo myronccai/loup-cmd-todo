@@ -33,9 +33,11 @@ pub func due_note(due: string, today: string): string {
     return "(due in " + str(n) + " days)";
 }
 
-# Open tasks with a due date no more than `days` days away (overdue ones
-# included), soonest first.
+## Open tasks with a due date no more than `days` days away (overdue ones
+## included), soonest first.
 pub func due_tasks(store: Store, days: int, opts: Options, today: string): list[Task] {
+    # A loop, not a list comprehension: in native builds of Loup 1.26.0 a
+    # comprehension over a list that came in as a parameter crashes.
     var soon: list[Task] = [];
     for (t in store.tasks) {
         if (!t.done and t.due.len() > 0 and days_between(today, t.due) <= days) {

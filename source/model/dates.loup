@@ -8,11 +8,19 @@
 # the end-to-end tests in both lanes. core.datetime's Date works in all of
 # them, so it does the calendar arithmetic.
 #
-# Structure: validation of YYYY-MM-DD text (digits_value, days_in_month,
-# valid_iso); arithmetic through Date (days_between, add_days); today();
-# then parse_due, which resolves user input to a date, and relative_day.
+# Structure: the IsoDate alias; validation of YYYY-MM-DD text
+# (digits_value, days_in_month, valid_iso); arithmetic through Date
+# (days_between, add_days); today(); then parse_due, which resolves user
+# input to a date, and relative_day.
 
 from core.datetime import (Date);
+
+# A calendar date as stored in the todo file, "YYYY-MM-DD", or "" for no
+# date. An alias, not a new type: any string converts, so valid_iso is
+# still the check. It is private: in Loup 1.26.0 an alias imported into a
+# module other than the entry point is an undefined type, so the other
+# modules write `string`.
+type IsoDate = string;
 
 const DIGITS: string = "0123456789";
 func weekday_names(): list[string] {
@@ -53,7 +61,7 @@ pub func days_in_month(year: int, month: int): int {
     return 31;
 }
 
-# Whether `text` is a real calendar date written YYYY-MM-DD.
+## Whether `text` is a real calendar date written YYYY-MM-DD.
 pub func valid_iso(text: string): bool {
     if (text.len() != 10 or text.slice(4, 5) != "-" or text.slice(7, 8) != "-") {
         return false;
@@ -67,23 +75,24 @@ pub func valid_iso(text: string): bool {
     return day <= days_in_month(year, month);
 }
 
-# A Date for a valid YYYY-MM-DD string.
-pub func to_date(iso: string): Date {
+## A Date for a valid YYYY-MM-DD string.
+pub func to_date(iso: IsoDate): Date {
     return Date(digits_value(iso.slice(0, 4)), digits_value(iso.slice(5, 7)), digits_value(iso.slice(8, 10)));
 }
 
-# Days from `start` to `end` (both YYYY-MM-DD); negative when `end` is earlier.
-pub func days_between(start: string, end: string): int {
+## Days from `start` to `end`; negative when `end` is earlier.
+pub func days_between(start: IsoDate, end: IsoDate): int {
     return to_date(start).daysUntil(to_date(end));
 }
 
-pub func add_days(iso: string, n: int): string {
+## The date `n` days after `iso` (before it when `n` is negative).
+pub func add_days(iso: IsoDate, n: int): IsoDate {
     return to_date(iso).addDays(n).isoformat();
 }
 
-# Today's date: $TODO_TODAY when it is set (for tests and demos), else the
-# system date.
-pub func today(): string {
+## Today's date: $TODO_TODAY when it is set (for tests and demos), else the
+## system date.
+pub func today(): IsoDate {
     let fixed = env("TODO_TODAY") ?? "";
     if (valid_iso(fixed)) {
         return fixed;
@@ -91,11 +100,14 @@ pub func today(): string {
     return Date.today().isoformat();
 }
 
-# Resolves a due-date argument against today:
-#   YYYY-MM-DD, today, tomorrow, +N (days), +Nw (weeks), a weekday name
-#   (mon ... sun: the next one after today), or none (no due date, "").
-# Returns "?" when the argument is none of these.
-pub func parse_due(text: string, today_iso: string): string {
+## Resolves a due-date argument against today:
+##   YYYY-MM-DD, today, tomorrow, +N (days), +Nw (weeks), a weekday name
+##   (mon ... sun: the next one after today), or none (no due date, "").
+## Returns "?" when the argument is none of these.
+pub func parse_due(text: string, today_iso: IsoDate): string {
+    # The largest N in +N and +Nw: a century of days, about seven centuries
+    # of weeks; either way the year keeps four digits.
+    const MAX_AHEAD: int = 36_500;
     let t = text.toLowerCase();
     if (t == "none" or t == "-") {
         return "";
@@ -119,7 +131,7 @@ pub func parse_due(text: string, today_iso: string): string {
             scale = 7;
         }
         let n = digits_value(number);
-        if (n < 0 or n > 36500) {
+        if (n < 0 or n > MAX_AHEAD) {
             return "?";
         }
         return add_days(today_iso, n * scale);
@@ -143,8 +155,8 @@ pub func parse_due(text: string, today_iso: string): string {
     return "?";
 }
 
-# "today", "tomorrow", "in 3 days", "yesterday", "2 days ago".
-pub func relative_day(due: string, today_iso: string): string {
+## "today", "tomorrow", "in 3 days", "yesterday", "2 days ago".
+pub func relative_day(due: IsoDate, today_iso: IsoDate): string {
     let n = days_between(today_iso, due);
     if (n == 0) {
         return "today";

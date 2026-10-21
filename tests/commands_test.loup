@@ -1,7 +1,8 @@
 @mode(host.dual)
 
-# Unit tests for the todo commands (add, list, done, undo, rm, edit, due),
-# run on an in-memory store with a fixed date: no file is read or written.
+# Unit tests for the todo commands (add, list, done, undo, rm, edit, due)
+# and the sort order and filters they share (commands.common), run on an
+# in-memory store with a fixed date: no file is read or written.
 #
 # Runtime: host.dual, run by the test runner: `make test` interprets this
 # file with Stage0 (`loup-bootstrap test --no-parallel`, source/ on
@@ -11,7 +12,7 @@ from debug.assert import (expect, expectEq);
 from appinfo import (EXIT_OK, EXIT_FAILURE, EXIT_USAGE);
 from cli.args import (Options, parse_args);
 from model.task import (Store, empty_store);
-from commands.common import (Outcome, task_line, sorted, parse_id);
+from commands.common import (Outcome, TaskOrder, task_line, sorted, parse_id, filter_tasks);
 from commands.add import (cmd_add);
 from commands.list import (cmd_list);
 from commands.done import (cmd_done, cmd_rm);
@@ -141,4 +142,31 @@ func test_parse_id(): void {
     expectEq(parse_id("0"), -1, "zero");
     expectEq(parse_id("-1"), -1, "negative");
     expectEq(parse_id("1x"), -1, "junk");
+}
+
+func test_task_order(): void {
+    var store = sample();
+    cmd_add(edits: store, opts(["add", "file", "taxes", "-p", "low", "-d", "2026-10-21"]), TODAY, "u4");
+    cmd_done(edits: store, opts(["done", "3"]), TODAY, true);
+    let t = store.tasks;
+    # 1: high, due 10-21; 2: no priority, no due; 3: done; 4: low, due 10-21.
+    expect(TaskOrder(t[0]) < TaskOrder(t[3]), "same day: higher priority first");
+    expect(TaskOrder(t[3]) < TaskOrder(t[1]), "a due date before none");
+    expect(TaskOrder(t[1]) < TaskOrder(t[2]), "open before done");
+    expect(TaskOrder(t[2]) > TaskOrder(t[0]), "done after open");
+    expect(TaskOrder(t[0]) <= TaskOrder(t[0]), "a key is <= itself");
+    var ids: list[string] = [];
+    for (task in sorted(t)) {
+        ids.push(str(task.id));
+    }
+    expectEq(ids.join(" "), "1 4 2 3", "sorted");
+}
+
+func test_filter_needs_every_tag(): void {
+    let store = sample();
+    let none: list[string] = [];
+    expectEq(filter_tasks(store.tasks, ["home", "money"], "", "").len(), 1, "both tags");
+    expectEq(filter_tasks(store.tasks, ["home"], "high", "").len(), 1, "tag and priority");
+    expectEq(filter_tasks(store.tasks, none, "", "RENT").len(), 1, "search ignores case");
+    expectEq(filter_tasks(store.tasks, none, "", "").len(), 3, "no filters");
 }

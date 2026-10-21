@@ -8,7 +8,7 @@
 # LOUPPATH), one test per `func test_*()`. It is not part of the binary.
 
 from debug.assert import (expect, expectEq);
-from model.task import (Store, empty_store, add_task, find_index, remove_at, parse_priority, priority_rank, valid_tag);
+from model.task import (Store, empty_store, add_task, find_index, remove_at, parse_priority, priority_rank, valid_tag, has_tag);
 
 func test_add_assigns_increasing_ids(): void {
     var store = empty_store();
@@ -44,4 +44,12 @@ func test_priorities(): void {
 func test_tags(): void {
     expect(valid_tag("home") and valid_tag("q4-2026") and valid_tag("a.b_c"), "valid");
     expect(!valid_tag("") and !valid_tag("two words") and !valid_tag("#x"), "invalid");
+}
+
+func test_has_tag(): void {
+    var store = empty_store();
+    add_task(edits: store, "a", "", ["home", "bills"], "", "2026-10-20", "u1");
+    expect(has_tag(store.tasks[0], "bills"), "has bills");
+    expect(!has_tag(store.tasks[0], "Bills"), "tags are case-sensitive");
+    expect(!has_tag(store.tasks[0], "work"), "no work tag");
 }

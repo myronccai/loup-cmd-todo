@@ -38,6 +38,8 @@ func test_parse_due(): void {
     expectEq(parse_due("2026-02-30", TODAY), "?", "bad date");
     expectEq(parse_due("+x", TODAY), "?", "bad offset");
     expectEq(parse_due("fr", TODAY), "?", "too short for a weekday");
+    expectEq(parse_due("+36500", TODAY), "2126-09-26", "a century ahead");
+    expectEq(parse_due("+36501", TODAY), "?", "too far ahead");
 }
 
 func test_days(): void {

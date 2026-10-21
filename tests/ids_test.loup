@@ -1,0 +1,42 @@
+@mode(host.dual)
+
+# Unit tests for todo's task UUIDs (model.ids): new_uuid's version and
+# variant bits, and valid_uuid.
+#
+# Runtime: host.dual, run by the test runner: `make test` interprets this
+# file with Stage0 (`loup-bootstrap test --no-parallel`, source/ on
+# LOUPPATH), one test per `func test_*()`. It is not part of the binary.
+
+from debug.assert import (expect, expectEq);
+from core.random import (Random);
+from core.uuid import (Uuid);
+from model.ids import (new_uuid, valid_uuid);
+
+func test_new_uuid_is_version_4(): void {
+    var rng = Random(42);
+    var k = 0;
+    while (k < 20) {
+        let text = new_uuid(edits: rng);
+        expect(valid_uuid(text), "valid: " + text);
+        let u = Uuid.parse(text);
+        expectEq(u.version(), 4, "version: " + text);
+        # The variant nibble (the first of the fourth group) is 8, 9, a or b.
+        expect("89ab".index_of(text.slice(19, 20)) >= 0, "variant: " + text);
+        k += 1;
+    }
+}
+
+func test_seeded_uuids_differ(): void {
+    var rng = Random(7);
+    let first = new_uuid(edits: rng);
+    let second = new_uuid(edits: rng);
+    expect(first != second, "two draws differ");
+}
+
+func test_valid_uuid(): void {
+    expect(valid_uuid("123e4567-e89b-42d3-a456-426614174000"), "version 4");
+    expect(valid_uuid("123e4567-e89b-12d3-a456-426614174000"), "other versions are valid too");
+    expect(valid_uuid("123e4567e89b42d3a456426614174000"), "core.uuid also takes 32 bare digits");
+    expect(!valid_uuid("not-a-uuid"), "text");
+    expect(!valid_uuid(""), "empty");
+}
