@@ -1,5 +1,12 @@
 @mode(host.dual)
 
+# todo edit: changes one task's text, priority, tags or due date. All the
+# values are checked before the task is looked up.
+#
+# Runtime: host.dual. Compiled into the native binary build/todo by `make
+# build`; `loup run source/main.loup` interprets the same code, and CI runs
+# the end-to-end tests in both lanes.
+
 from cli.args import (Options);
 from model.task import (Store, find_index, parse_priority);
 from model.dates import (parse_due);

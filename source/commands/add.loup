@@ -1,5 +1,13 @@
 @mode(host.dual)
 
+# todo add: makes a task from the operands (its text) and the -p, -t and -d
+# options. Like every command it only changes the Store it is given and
+# returns an Outcome; commands.runner saves and prints.
+#
+# Runtime: host.dual. Compiled into the native binary build/todo by `make
+# build`; `loup run source/main.loup` interprets the same code, and CI runs
+# the end-to-end tests in both lanes.
+
 from cli.args import (Options);
 from model.task import (Store, add_task, parse_priority);
 from model.dates import (parse_due);

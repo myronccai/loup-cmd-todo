@@ -1,12 +1,23 @@
 @mode(host.dual)
 
-# A small JSON reader and writer.
+# todo storage: a small JSON reader and writer for the todo file.
 #
-# system.json would do this, but its parse and stringify are host builtins
-# that native builds of Loup 1.26.0 cannot link, so todo carries its own.
+# Runtime: host.dual. Compiled into the native binary build/todo by `make
+# build`; `loup run source/main.loup` interprets the same code, and CI runs
+# the end-to-end tests in both lanes. system.json would do this, but its
+# parse and stringify are host builtins that native builds of Loup 1.26.0
+# cannot link, so todo carries its own.
+#
 # Objects keep their keys in order (two parallel lists, because native
 # builds misread enum values stored in a dict). Numbers are integers: the
 # todo file stores nothing else.
+#
+# Structure: the Json value; the reader, a recursive-descent parser whose
+# Reader holds the input split into characters, the position and the first
+# error (read_value picks a reader by the first character, and arrays and
+# objects call it again for their elements); parse_json for a whole
+# document; the writer (quote, write_json); field, the lookup that
+# storage.file reads objects with.
 
 pub enum Json {
     Null,
@@ -17,6 +28,8 @@ pub enum Json {
     Obj(keys: list[string], values: list[Json]),
 }
 
+# The parser's state. The input is a list of one-character strings, so
+# `pos` counts characters, as the error positions do.
 pub struct Reader {
     pub chars: list[string];
     pub var pos: int;
@@ -78,6 +91,12 @@ func read_hex4(edits r: Reader): int {
     return code;
 }
 
+# Each reader below is entered with `r.pos` on the first character of its
+# value (read_value skips whitespace to get there) and leaves it just past
+# the value. An Err carries the message `fail` recorded, which `?` passes
+# up unchanged.
+
+# A string literal, its escapes decoded.
 func read_string(edits r: Reader): Result[string, string] {
     r.pos += 1;
     let controls = control_chars();
@@ -135,6 +154,7 @@ func read_string(edits r: Reader): Result[string, string] {
     return Err(fail(edits: r, "unterminated string"));
 }
 
+# An optional `-` and digits; a fraction or exponent is refused.
 func read_number(edits r: Reader): Result[Json, string] {
     var negative = false;
     if (current(r) == "-") {
@@ -160,6 +180,7 @@ func read_number(edits r: Reader): Result[Json, string] {
     return Ok(Json.Int(value = value));
 }
 
+# true, false or null; anything else is an error.
 func read_word(edits r: Reader): Result[Json, string] {
     var j = r.pos;
     while (j < r.chars.len() and "abcdefghijklmnopqrstuvwxyz".index_of(r.chars[j]) >= 0) {
@@ -181,6 +202,8 @@ func read_word(edits r: Reader): Result[Json, string] {
     return Err(fail(edits: r, "unexpected character"));
 }
 
+# Arrays and objects: after the opening bracket, elements separated by
+# commas until the closing one; anything else after an element fails.
 func read_array(edits r: Reader): Result[Json, string] {
     r.pos += 1;
     var items: list[Json] = [];
@@ -241,6 +264,7 @@ func read_object(edits r: Reader): Result[Json, string] {
     return Err(fail(edits: r, "unreachable"));
 }
 
+# Any value, after optional whitespace, by its first character.
 pub func read_value(edits r: Reader): Result[Json, string] {
     skip_ws(edits: r);
     if (at_end(r)) {

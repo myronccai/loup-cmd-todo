@@ -1,6 +1,18 @@
 @mode(host.dual)
 
-# The todo file: where it is, how a Store maps to JSON, and the atomic save.
+# todo storage: the todo file: where it is, how a Store maps to JSON, and
+# the atomic save.
+#
+# Runtime: host.dual. Compiled into the native binary build/todo by `make
+# build`; `loup run source/main.loup` interprets the same code, and CI runs
+# the end-to-end tests in both lanes. The JSON goes through storage.json,
+# not system.json, which native builds cannot link.
+#
+# Structure: store_path; the writer (Store to Json, then text); the field
+# readers and the reader (text to Json, then a Store), which checks every
+# task and reports the first problem; load_store and save_store.
+#
+# The file looks like this:
 #
 #   {
 #     "version": 1,
@@ -34,6 +46,8 @@ pub func store_path(option_file: string): string {
     return DEFAULT_FILE;
 }
 
+# Writing. Keys go out in a fixed order, so saving an unchanged store gives
+# the same text; an empty optional field is written as null.
 func optional_text(text: string): Json {
     if (text.len() == 0) {
         return Json.Null;
@@ -75,7 +89,9 @@ pub func store_to_text(store: Store): string {
     return write_json(store_to_json(store), "") + "\n";
 }
 
-# Field readers. Each returns the value, or records a problem in `errors`.
+# Reading. Each field reader returns the value, or records a problem in
+# `errors` and returns a default, so a whole task is read before it is
+# judged.
 func get_int(obj: Json, key: string, edits errors: list[string]): int {
     let f = field(obj, key);
     match f.value {
@@ -216,6 +232,8 @@ pub func store_from_json(doc: Json): Result[Store, string] {
     if (errors.len() > 0) {
         return Err(errors[0]);
     }
+    # next_id may be higher than the highest ID (removed tasks), never
+    # lower: a hand-edited file cannot make an ID be handed out twice.
     var next_id = max_id + 1;
     let stored = field(doc, "next_id");
     if (stored.found) {
@@ -237,7 +255,8 @@ pub func store_from_text(text: string): Result[Store, string] {
     return store_from_json(parsed.unwrap());
 }
 
-# The store in `path`; a missing file is an empty store.
+# The store in `path`; a missing file is an empty store. The checks come
+# before readText because a failed read cannot be caught in native builds.
 pub func load_store(path: string): Result[Store, string] {
     if (!exists(path)) {
         return Ok(empty_store());

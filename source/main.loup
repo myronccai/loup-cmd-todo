@@ -1,7 +1,14 @@
 @mode(host.dual)
 
-# Entry point. Keep this file thin: all behaviour lives in cli.app.run so
-# that tests can call it with an argument list.
+# todo: entry point. Keep this file thin: all behaviour lives in
+# cli.app.run so that tests can call it with an argument list.
+#
+# Runtime: host.dual. main() gets the command line from runtime.args(). The
+# same source runs two ways: `make run` interprets it with `loup run
+# source/main.loup`, and `make build` compiles it with the rest of source/
+# into the native binary build/todo. `make ci` (and CI) puts both lanes
+# through the same end-to-end tests: `make e2e` runs build/todo, `make
+# e2e-run` runs this file through tests/run-from-source.sh.
 
 from cli.app import (run);
 

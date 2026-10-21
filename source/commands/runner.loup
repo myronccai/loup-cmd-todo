@@ -1,7 +1,15 @@
 @mode(host.dual)
 
-# Runs one command against the todo file: load, run the pure command,
+# todo: runs one command against the todo file: load, run the pure command,
 # save the store if the command changed it, and print the outcome.
+#
+# Runtime: host.dual. Compiled into the native binary build/todo by `make
+# build`; `loup run source/main.loup` interprets the same code, and CI runs
+# the end-to-end tests in both lanes.
+#
+# Structure: allowed_options is the table cli.app checks the options
+# against before anything is loaded; execute picks the command function;
+# run_command does the I/O around it, in the order above.
 
 from appinfo import (APP_NAME, EXIT_OK, EXIT_FAILURE, EXIT_USAGE);
 from cli.args import (Options);
@@ -42,6 +50,7 @@ pub func allowed_options(command: string): list[string] {
 # Runs a known command on a loaded store.
 pub func execute(edits store: Store, opts: Options, day: string): Outcome {
     let c = opts.command;
+    # Only add needs randomness, for the new task's UUID (see model.ids).
     if (c == "add") {
         var rng = Random(clock_seed());
         let uuid = new_uuid(edits: rng);

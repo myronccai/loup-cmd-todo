@@ -1,5 +1,12 @@
 @mode(host.dual)
 
+# todo due: lists the open tasks due within DAYS days (7 by default),
+# overdue ones included, each with a note such as "(due tomorrow)".
+#
+# Runtime: host.dual. Compiled into the native binary build/todo by `make
+# build`; `loup run source/main.loup` interprets the same code, and CI runs
+# the end-to-end tests in both lanes.
+
 from cli.args import (Options);
 from model.task import (Store, Task);
 from model.dates import (days_between);

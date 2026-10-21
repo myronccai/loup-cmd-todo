@@ -1,5 +1,13 @@
 @mode(host.dual)
 
+# todo: the top level of a run. Parses the arguments, answers --help and
+# --version, checks the command and the options it allows, runs it, and
+# turns an uncaught exception into exit status 1.
+#
+# Runtime: host.dual. Compiled into the native binary build/todo by `make
+# build`; `loup run source/main.loup` interprets the same code, and CI runs
+# the end-to-end tests in both lanes.
+
 from appinfo import (APP_NAME, EXIT_OK, EXIT_FAILURE, EXIT_USAGE);
 from cli.args import (Options, parse_args, disallowed);
 from cli.usage import (usage, version_line);

@@ -1,5 +1,13 @@
 @mode(host.dual)
 
+# todo list: shows the open tasks, or all (-a) or only done ones (--done),
+# narrowed by tag, priority, search text and --overdue, in the common sort
+# order.
+#
+# Runtime: host.dual. Compiled into the native binary build/todo by `make
+# build`; `loup run source/main.loup` interprets the same code, and CI runs
+# the end-to-end tests in both lanes.
+
 from cli.args import (Options);
 from model.task import (Store, Task);
 from commands.common import (Outcome, new_outcome, usage_outcome, check_values, filter_tasks, sorted, is_overdue, id_width, task_line, detail_line);

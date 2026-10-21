@@ -1,7 +1,16 @@
 @mode(host.dual)
 
-# Due dates. Dates are stored as ISO strings (YYYY-MM-DD); user input may
-# also be relative to today.
+# todo model: due dates. Dates are stored as ISO strings (YYYY-MM-DD); user
+# input may also be relative to today.
+#
+# Runtime: host.dual. Compiled into the native binary build/todo by `make
+# build`; `loup run source/main.loup` interprets the same code, and CI runs
+# the end-to-end tests in both lanes. core.datetime's Date works in all of
+# them, so it does the calendar arithmetic.
+#
+# Structure: validation of YYYY-MM-DD text (digits_value, days_in_month,
+# valid_iso); arithmetic through Date (days_between, add_days); today();
+# then parse_due, which resolves user input to a date, and relative_day.
 
 from core.datetime import (Date);
 
@@ -10,6 +19,8 @@ func weekday_names(): list[string] {
     return ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 }
 
+# The value of a run of ASCII digits, or -1. Read by hand because
+# system.text.parseInt does not link in native builds of Loup 1.26.0.
 func digits_value(text: string): int {
     if (text.len() == 0) {
         return -1;

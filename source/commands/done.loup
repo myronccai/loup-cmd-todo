@@ -1,5 +1,14 @@
 @mode(host.dual)
 
+# todo done, undo and rm: mark tasks done or not done, or remove them, by
+# ID. All the IDs are parsed before any task changes (a malformed one is a
+# usage error); an ID with no task fails on its own and the rest still
+# apply.
+#
+# Runtime: host.dual. Compiled into the native binary build/todo by `make
+# build`; `loup run source/main.loup` interprets the same code, and CI runs
+# the end-to-end tests in both lanes.
+
 from cli.args import (Options);
 from model.task import (Store, find_index, remove_at);
 from commands.common import (Outcome, new_outcome, usage_outcome, fail, parse_id);

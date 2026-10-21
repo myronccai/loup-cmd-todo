@@ -1,13 +1,22 @@
 @mode(host.dual)
 
-# Command-line parsing. Loup 1.26 has no CLI library, so arguments are
-# parsed by hand into an Options value.
+# todo: command-line parsing. Loup 1.26 has no CLI library, so arguments
+# are parsed by hand into an Options value.
+#
+# Runtime: host.dual. Compiled into the native binary build/todo by `make
+# build`; `loup run source/main.loup` interprets the same code, and CI runs
+# the end-to-end tests in both lanes.
 #
 # Grammar: todo [OPTION]... COMMAND [ARG]...
 #   Options may appear anywhere before `--`; everything after `--` is an
 #   argument. Value options accept `-x VALUE`, `--name VALUE` and
 #   `--name=VALUE`. `given` records the long name of every option used, so
 #   each command can reject the options that do not apply to it.
+#
+# Structure: value_option and flag_option map every spelling of an option
+# to its long name; parse_args makes one pass over argv, where the first
+# operand is the command and the rest are its arguments; disallowed is the
+# check cli.app runs once it knows the command.
 
 pub struct Options {
     pub command: string;
@@ -90,6 +99,8 @@ pub func parse_args(argv: list[string]): Result[Options, string] {
         let arg = argv[i];
         i += 1;
 
+        # An operand (a lone `-` counts as one): the first is the command,
+        # the rest are its arguments, wherever the options fall.
         if (only_operands or arg == "-" or !arg.startsWith("-")) {
             if (command.len() == 0) {
                 command = arg;
@@ -123,6 +134,8 @@ pub func parse_args(argv: list[string]): Result[Options, string] {
             continue;
         }
 
+        # A value option takes its inline value, else the next argument
+        # even when that starts with `-` (`-s -x` searches for "-x").
         let long = value_option(name);
         if (long.len() == 0) {
             return Err("unknown option '" + name + "'");

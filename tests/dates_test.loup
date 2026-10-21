@@ -1,5 +1,12 @@
 @mode(host.dual)
 
+# Unit tests for todo's due dates (model.dates): ISO validation, due-date
+# arguments, day differences and relative wording.
+#
+# Runtime: host.dual, run by the test runner: `make test` interprets this
+# file with Stage0 (`loup-bootstrap test --no-parallel`, source/ on
+# LOUPPATH), one test per `func test_*()`. It is not part of the binary.
+
 from debug.assert import (expect, expectEq);
 from model.dates import (valid_iso, parse_due, relative_day, days_between, add_days, days_in_month);
 

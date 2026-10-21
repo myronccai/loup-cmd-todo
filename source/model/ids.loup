@@ -1,9 +1,13 @@
 @mode(host.dual)
 
-# Task UUIDs. core.uuid's Uuid.v4() needs an entropy source that neither
-# native builds nor the self-hosted interpreter of Loup 1.26.0 provide, so
-# the 16 random bytes come from core.random seeded with the clock; core.uuid
-# then checks the result.
+# todo model: task UUIDs (random, version 4), one given to each new task.
+#
+# Runtime: host.dual. Compiled into the native binary build/todo by `make
+# build`; `loup run source/main.loup` interprets the same code, and CI runs
+# the end-to-end tests in both lanes. core.uuid's Uuid.v4() needs an
+# entropy source that neither native builds nor the self-hosted interpreter
+# of Loup 1.26.0 provide, so the 16 random bytes come from core.random
+# seeded with the clock; core.uuid then checks the result.
 
 from core.random import (Random);
 from core.uuid import (Uuid);

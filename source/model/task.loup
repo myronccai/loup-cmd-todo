@@ -1,7 +1,11 @@
 @mode(host.dual)
 
-# The data model: a store holds the tasks and the next ID to hand out. IDs
-# are never reused, so a removed task's ID stays unused.
+# todo model: tasks, and the store that holds them with the next ID to
+# hand out. IDs are never reused, so a removed task's ID stays unused.
+#
+# Runtime: host.dual. Compiled into the native binary build/todo by `make
+# build`; `loup run source/main.loup` interprets the same code, and CI runs
+# the end-to-end tests in both lanes.
 
 pub struct Task {
     pub var id: int;

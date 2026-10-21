@@ -1,7 +1,16 @@
 @mode(host.dual)
 
-# What every command shares: the Outcome it returns, ID parsing, the
-# filters, the sort order and the one-line rendering of a task.
+# todo commands: what every command shares: the Outcome it returns, ID
+# parsing, the filters, the sort order and the one-line rendering of a
+# task.
+#
+# Runtime: host.dual. Compiled into the native binary build/todo by `make
+# build`; `loup run source/main.loup` interprets the same code, and CI runs
+# the end-to-end tests in both lanes.
+#
+# The commands are pure: each changes only the Store passed to it and
+# returns an Outcome, so the unit tests run them on an in-memory store.
+# Only commands.runner touches the file and prints.
 
 from appinfo import (EXIT_OK, EXIT_FAILURE, EXIT_USAGE);
 from model.task import (Task, priority_rank, parse_priority, valid_tag);
